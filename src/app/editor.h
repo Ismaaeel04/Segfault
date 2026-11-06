@@ -29,6 +29,8 @@ private:
     double lastEdit = 0;
     int lastEditKind = 0;
     bool dragging = false;
+    bool barDragging = false;    // the scrollbar thumb is being dragged
+    float barGrab = 0;
     double lastClick = 0;
     int lastClickY = -1, lastClickX = -1;
     float blink = 0;

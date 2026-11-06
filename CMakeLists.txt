@@ -84,3 +84,6 @@ if (MSVC)
     target_compile_options(auth_tests PRIVATE /utf-8)
 endif()
 add_test(NAME auth COMMAND auth_tests)
+
+add_executable(scrollbar_tests tests/test_scrollbar.cpp)
+add_test(NAME scrollbar COMMAND scrollbar_tests)

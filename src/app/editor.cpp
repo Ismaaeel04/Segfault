@@ -345,7 +345,12 @@ void CodeEditor::Frame(Rectangle r, int id, bool readOnly) {
 
     bool focused = IsFocused(id);
     bool hover = InputEnabled() && MouseIn(r);
-    if (hover) WantIBeam();
+    const float contentH = lines.size() * lineH + lineH * 2;
+    const Rectangle barView = {r.x, text.y, r.width - 1, text.height};
+    if (hover && !OverScrollBar(barView, contentH)) WantIBeam();
+
+    // ---- scrollbar: comes first, so its clicks don't move the cursor ---------
+    const bool onBar = ScrollBarInput(barView, contentH, scrollY, targetY, barDragging, barGrab);
 
     // ---- mouse -------------------------------------------------------------
     auto posFromMouse = [&](int& y, int& x) {
@@ -355,7 +360,7 @@ void CodeEditor::Frame(Rectangle r, int id, bool readOnly) {
         x = (int)std::round((m.x - text.x + scrollX) / charW);
         x = std::clamp(x, 0, (int)lines[y].size());
     };
-    if (InputEnabled() && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+    if (!onBar && InputEnabled() && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
         if (!hover && focused) { ClearTextFocus(); focused = false; }
         if (hover) {
             FocusWidget(id);
@@ -443,10 +448,5 @@ void CodeEditor::Frame(Rectangle r, int id, bool readOnly) {
     EndClip();
     // gutter separator + scrollbar
     DrawRectangleRec({r.x + gutterW, r.y + 8, 1, r.height - 16}, Alpha(col::border, 0.5f));
-    float contentH = lines.size() * lineH + lineH * 2;
-    if (contentH > text.height) {
-        float h = std::max(30.0f, text.height * text.height / contentH);
-        float t = maxY > 0 ? scrollY / maxY : 0;
-        RoundRect({r.x + r.width - 7, text.y + (text.height - h) * t, 4, h}, 2, Alpha(col::faint, 0.6f));
-    }
+    DrawScrollBar(barView, contentH, scrollY, barDragging);
 }
