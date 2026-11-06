@@ -26,6 +26,12 @@ using namespace ui;
 
 static std::unique_ptr<Scene> gScenes[(int)SceneId::Count];
 
+// Anti-aliasing by supersampling: the UI is drawn into a canvas SSAA times
+// larger than the window, then shrunk with mipmaps (= an SSAA x SSAA box
+// filter). MSAA cannot be used because it does not apply to render textures.
+// 4x gives 16 coverage levels per pixel; drops to 2x on very large windows.
+static int SSAA = 4;
+
 static void CreateScenes() {
     gScenes[(int)SceneId::Home].reset(CreateHomeScene());
     gScenes[(int)SceneId::Study].reset(CreateStudyScene());
@@ -263,13 +269,14 @@ int main(int argc, char** argv) {
         if (scale <= 0) scale = 1;
         if (std::fabs(scale - currentScale) > 0.001f) {
             if (canvas.id) UnloadRenderTexture(canvas);
-            canvas = LoadRenderTexture((int)std::lround(W * scale), (int)std::lround(H * scale));
-            SetTextureFilter(canvas.texture, TEXTURE_FILTER_POINT);
-            ui::SetScale(scale);
+            int outW = (int)std::lround(W * scale), outH = (int)std::lround(H * scale);
+            SSAA = outW * 4 <= 8192 ? 4 : 2;
+            canvas = LoadRenderTexture(outW * SSAA, outH * SSAA);
+            ui::SetScale(scale * SSAA);
             ClearFontCache();
             currentScale = scale;
         }
-        float dw = canvas.texture.width / px, dh = canvas.texture.height / px;   // in screen points
+        float dw = canvas.texture.width / (px * SSAA), dh = canvas.texture.height / (px * SSAA);   // in screen points
         float offX = std::floor((sw - dw) * 0.5f), offY = std::floor((sh - dh) * 0.5f);
         SetMouseOffset((int)-offX, (int)-offY);
         SetMouseScale(px / scale, px / scale);
@@ -299,7 +306,7 @@ int main(int argc, char** argv) {
         BeginTextureMode(canvas);
         ClearBackground(col::bg);
         Camera2D cam = {};
-        cam.zoom = scale;
+        cam.zoom = scale * SSAA;
         BeginMode2D(cam);
         ui::BeginFrame();
         Backdrop((float)GetTime());
@@ -324,6 +331,9 @@ int main(int argc, char** argv) {
         DrawToasts(dt);
         EndMode2D();
         EndTextureMode();
+        // Shrinking by exactly SSAA lands on mip level log2(SSAA): a clean box filter.
+        GenTextureMipmaps(&canvas.texture);
+        SetTextureFilter(canvas.texture, TEXTURE_FILTER_TRILINEAR);
 
         // ---- present ----------------------------------------------------
         BeginDrawing();
@@ -341,6 +351,7 @@ int main(int argc, char** argv) {
         if (shotFile && frame == shotFrame) {
             Image img = LoadImageFromTexture(canvas.texture);
             ImageFlipVertical(&img);
+            ImageResize(&img, img.width / SSAA, img.height / SSAA);   // back to the output size
             ImageFormat(&img, PIXELFORMAT_UNCOMPRESSED_R8G8B8);
             ExportImage(img, shotFile);
             UnloadImage(img);

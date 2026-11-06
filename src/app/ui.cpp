@@ -232,12 +232,12 @@ float RichText(Rectangle r, const std::string& text, float size, Color c, bool d
 void RoundRect(Rectangle r, float radius, Color c) {
     float m = std::min(r.width, r.height);
     if (m <= 0) return;
-    DrawRectangleRounded(r, std::min(1.0f, radius * 2 / m), 8, c);
+    DrawRectangleRounded(r, std::min(1.0f, radius * 2 / m), 16, c);
 }
 void RoundRectLines(Rectangle r, float radius, float thick, Color c) {
     float m = std::min(r.width, r.height);
     if (m <= 0) return;
-    DrawRectangleRoundedLinesEx(r, std::min(1.0f, radius * 2 / m), 8, thick, c);
+    DrawRectangleRoundedLinesEx(r, std::min(1.0f, radius * 2 / m), 16, thick, c);
 }
 void Shadow(Rectangle r, float radius, float strength) {
     for (int i = 4; i >= 1; i--) {
