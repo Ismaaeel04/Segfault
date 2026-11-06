@@ -1,4 +1,5 @@
 #include "app.h"
+#include "auth.h"
 #include "ui.h"
 #include "content/content.h"
 #include "exam_output.h"
@@ -102,15 +103,31 @@ float SectionMastery(int section) {
     return total ? (float)got / total : 0;
 }
 
+// ============================================================== accounts ===
+void SignIn(const std::string& username) {
+    app.user = username;
+    app.userDir = auth::UserStore(app.dataDir + "segfault_users").UserDir(username);
+    app.progress = Progress();
+    app.progress.Load(app.userDir + "segfault_progress.txt");
+    app.Go(SceneId::Home);
+}
+
+void SignOut() {
+    app.user.clear();
+    app.userDir.clear();
+    app.progress = Progress();   // no path: nothing can be saved until the next login
+    app.Go(SceneId::Login);
+}
+
 // ========================================================= saved code ======
 static std::string CodePath(const std::string& key) {
     std::string safe;
     for (char c : key) safe += (std::isalnum((unsigned char)c) || c == '_' || c == '-') ? c : '_';
-    return app.dataDir + "segfault_code/" + safe + ".cpp";
+    return app.userDir + "segfault_code/" + safe + ".cpp";
 }
 
 std::string LoadSavedCode(const std::string& key) {
-    if (app.dataDir.empty()) return "";
+    if (app.userDir.empty()) return "";
     std::ifstream in(CodePath(key), std::ios::binary);
     if (!in) return "";
     std::stringstream ss;
@@ -119,9 +136,9 @@ std::string LoadSavedCode(const std::string& key) {
 }
 
 void SaveCode(const std::string& key, const std::string& code) {
-    if (app.dataDir.empty()) return;
+    if (app.userDir.empty()) return;
     std::error_code ec;
-    std::filesystem::create_directories(app.dataDir + "segfault_code", ec);
+    std::filesystem::create_directories(app.userDir + "segfault_code", ec);
     std::ofstream out(CodePath(key), std::ios::binary);
     out << code;
 }

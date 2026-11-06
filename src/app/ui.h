@@ -73,7 +73,8 @@ bool IconButton(Rectangle r, const std::string& glyph, bool enabled = true);
 bool ListItem(Rectangle r, const std::string& title, const std::string& sub, bool selected, Color accent, bool done);
 bool Tab(Rectangle r, const std::string& label, bool active);
 // Returns true when Enter is pressed. `id` must be unique per text box.
-bool TextBox(Rectangle r, std::string& text, int id, int maxLen = 64, bool numericOnly = false, const std::string& placeholder = "");
+// masked: draws every character as * (for passwords).
+bool TextBox(Rectangle r, std::string& text, int id, int maxLen = 64, bool numericOnly = false, const std::string& placeholder = "", bool masked = false);
 void ClearTextFocus();
 bool AnyTextFocused();
 void ProgressBar(Rectangle r, float t, Color fill, Color back = col::panelHi);

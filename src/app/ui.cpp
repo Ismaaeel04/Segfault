@@ -382,7 +382,7 @@ bool AnyTextFocused() { return gActiveBox != -1; }
 void FocusWidget(int id) { gActiveBox = id; }
 bool IsFocused(int id) { return gActiveBox == id; }
 
-bool TextBox(Rectangle r, std::string& text, int id, int maxLen, bool numericOnly, const std::string& placeholder) {
+bool TextBox(Rectangle r, std::string& text, int id, int maxLen, bool numericOnly, const std::string& placeholder, bool masked) {
     bool hover = gInput && MouseIn(r);
     if (hover) gIBeam = true;
     if (gInput && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
@@ -408,11 +408,12 @@ bool TextBox(Rectangle r, std::string& text, int id, int maxLen, bool numericOnl
     float size = 16;
     float ty = r.y + (r.height - size) / 2;
     BeginClip({r.x + 4, r.y, r.width - 8, r.height});
-    float tw = Measure(text, size, F_MONO).x;
+    const std::string shown = masked ? std::string(text.size(), '*') : text;
+    float tw = Measure(shown, size, F_MONO).x;
     float tx = r.x + 10;
     if (tw > r.width - 24) tx -= tw - (r.width - 24);
     if (text.empty() && !active) Text(placeholder, r.x + 10, ty, size, col::faint, F_MONO);
-    Text(text, tx, ty, size, col::text, F_MONO);
+    Text(shown, tx, ty, size, col::text, F_MONO);
     if (active && fmodf((float)GetTime(), 1.0f) < 0.55f)
         DrawRectangleRec({tx + tw + 1, ty - 1, 2, size + 3}, col::accent);
     EndClip();

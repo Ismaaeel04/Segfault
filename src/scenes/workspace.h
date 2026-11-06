@@ -13,6 +13,7 @@
 
 class Workspace {
 public:
+    ~Workspace() { SaveNow(); }   // edits waiting for the autosave are not lost on exit or logout
     // saveKey: where the code is saved ("" = keep it in memory only)
     void Open(const Problem* p, const std::string& saveKey, bool examMode);
     void Frame(Rectangle area);

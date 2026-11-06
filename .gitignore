@@ -5,4 +5,5 @@ out/
 .vs/
 *.user
 segfault_progress.txt
+segfault_users/
 .DS_Store

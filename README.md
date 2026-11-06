@@ -21,6 +21,22 @@ The exams are about **writing code**, so the app is too. It has three main parts
 | ![Practice list](docs/screenshots/03-practice-list.png) | ![Mock exam](docs/screenshots/05-mock-exam.png) |
 | ![Memory visualizer](docs/screenshots/07-memory-visualizer.png) | ![Linked list lab](docs/screenshots/08-linked-list-lab.png) |
 
+## Student accounts
+
+The app opens on a login screen. Each student registers with a username and password, and their
+XP, progress and saved code are kept separately, so several students can share one computer.
+Accounts live next to the executable:
+
+```
+segfault_users/users.txt         username, salt and password hash (PBKDF2-HMAC-SHA256, 600,000 rounds)
+segfault_users/user_<name>/      that student's progress and saved code
+```
+
+Passwords are never stored. Accounts are local to the computer: they keep students' work apart,
+but anyone with access to the folder can read or delete these files, and a forgotten password
+can't be recovered from inside the app. Progress saved by an older version moves to the first
+account created.
+
 ## How your code is compiled
 
 When you press Run, your code goes into a small test harness, gets compiled, and runs with a time
@@ -53,6 +69,8 @@ raylib is downloaded automatically the first time.
 
 ```
 ./build/pq_tests                  # 141 unit tests of the reference solutions
+./build/auth_tests                # student accounts: hashing against published test vectors,
+                                  # register, login, bad input, what ends up on disk
 ./build/Segfault --selftest   # compiles every problem's reference solution with every compiler
                                   # found and checks that all tests pass and every starter fails;
                                   # also checks lesson links and the visualizer programs
@@ -64,11 +82,11 @@ raylib is downloaded automatically the first time.
 src/solutions/   reference solutions (Lab1, the pointer functions, both linked lists): compiled
                  into a library used by the unit tests; Study and Practice show this same code
 src/app/         main loop and scaling, UI toolkit (ui.cpp), code editor (editor.cpp),
-                 compiler detection + test runner (runner.cpp), process launching with
+                 student accounts (auth.cpp), compiler detection + test runner (runner.cpp), process launching with
                  time limits (process.cpp), progress and saved code (app.cpp)
 src/content/     lessons.cpp, problems.cpp (statements, starter code, tests),
                  questions.cpp, mem_programs.cpp
-src/scenes/      home, study, practice, mock, quiz, workspace (problem screen),
+src/scenes/      login, home, study, practice, mock, quiz, workspace (problem screen),
                  visualizer, listlab, grid (interactive demos)
 third_party/     TinyCC for Windows (LGPL, see COPYING.txt)
 resources/fonts  Inter + JetBrains Mono (SIL OFL)

@@ -25,6 +25,18 @@ using namespace ui;
 
 static std::unique_ptr<Scene> gScenes[(int)SceneId::Count];
 
+static void CreateScenes() {
+    gScenes[(int)SceneId::Home].reset(CreateHomeScene());
+    gScenes[(int)SceneId::Study].reset(CreateStudyScene());
+    gScenes[(int)SceneId::Practice].reset(CreatePracticeScene());
+    gScenes[(int)SceneId::Mock].reset(CreateMockScene());
+    gScenes[(int)SceneId::Quiz].reset(CreateQuizScene());
+    gScenes[(int)SceneId::Visualizer].reset(CreateVisualizerScene());
+    gScenes[(int)SceneId::ListLab].reset(CreateListLabScene());
+    gScenes[(int)SceneId::Grid].reset(CreateGridScene());
+    gScenes[(int)SceneId::Login].reset(CreateLoginScene());
+}
+
 static std::string FindResourceDir() {
     std::string base = GetApplicationDirectory();
     const std::string candidates[] = {base + "resources", base + "../resources", base + "../../resources",
@@ -47,7 +59,7 @@ static bool TopBar(Scene* scene) {
     DrawRectangleRec({0, 0, W, 64}, col::bg2);
     DrawRectangleRec({0, 63, W, 1}, Alpha(col::border, 0.9f));
     bool back = false;
-    if (app.current == SceneId::Home) {
+    if (app.current == SceneId::Home || app.current == SceneId::Login) {
         RoundRect({24, 15, 34, 34}, 9, col::accent);
         RoundRect({33, 24, 16, 16}, 3, col::bg2);
         DrawCircleV({41, 32}, 3.5f, col::pointer);
@@ -57,8 +69,14 @@ static bool TopBar(Scene* scene) {
         back = Button({20, 13, 104, 38}, app.hasReturn ? "<  Back" : "<  Home", BTN_GHOST, true, 15);
         Text(scene->Title(), 142, 19, 21, WHITE, F_HEAVY);
     }
+    if (app.current == SceneId::Login) return false;
     const Progress& p = app.progress;
     float bx = W - 252;
+    // Only on Home, so nobody logs out by accident in the middle of an exam.
+    if (app.current == SceneId::Home && !app.user.empty()) {
+        if (Button({bx - 100, 15, 88, 34}, "Log out", BTN_GHOST, true, 13.5f)) app.signOutRequested = true;
+        TextRight(app.user, bx - 112, 23, 14.5f, col::text, F_BOLD);
+    }
     RoundRect({bx, 15, 228, 34}, 17, col::panel);
     Badge(bx + 5, 20, "LV " + std::to_string(p.Level()), col::warn, 12.5f);
     ProgressBar({bx + 70, 29, 92, 6}, p.LevelProgress(), col::accent2);
@@ -184,19 +202,10 @@ int main(int argc, char** argv) {
     sources::Load(FindSolutionsDir(app.resourceDir));
     runner::StartDetection(app.resourceDir);
     app.dataDir = GetApplicationDirectory();
-    if (!shotFile) app.progress.Load(app.dataDir + "segfault_progress.txt");
-
-    gScenes[(int)SceneId::Home].reset(CreateHomeScene());
-    gScenes[(int)SceneId::Study].reset(CreateStudyScene());
-    gScenes[(int)SceneId::Practice].reset(CreatePracticeScene());
-    gScenes[(int)SceneId::Mock].reset(CreateMockScene());
-    gScenes[(int)SceneId::Quiz].reset(CreateQuizScene());
-    gScenes[(int)SceneId::Visualizer].reset(CreateVisualizerScene());
-    gScenes[(int)SceneId::ListLab].reset(CreateListLabScene());
-    gScenes[(int)SceneId::Grid].reset(CreateGridScene());
+    CreateScenes();
 
     if (shotFile) app.Go((SceneId)shotScene, shotParam);
-    else gScenes[0]->Enter("");
+    else app.Go(SceneId::Login);
 
     RenderTexture2D canvas = {};
     float currentScale = -1;
@@ -222,6 +231,14 @@ int main(int argc, char** argv) {
         SetMouseOffset((int)-offX, (int)-offY);
         SetMouseScale(px / scale, px / scale);
 
+        // ---- log out: scenes hold the student's open code, exam and quiz --
+        if (app.signOutRequested) {
+            app.signOutRequested = false;
+            for (auto& s : gScenes) s.reset();   // flushes unsaved code to the student's folder
+            SignOut();
+            CreateScenes();
+        }
+
         // ---- scene switching ------------------------------------------
         if (app.switchRequested) {
             app.switchRequested = false;
@@ -244,7 +261,7 @@ int main(int argc, char** argv) {
         scene->Frame(dt);
         SetInputEnabled(true);
         bool back = TopBar(scene);
-        if ((back || (IsKeyPressed(KEY_ESCAPE) && !AnyTextFocused())) && app.current != SceneId::Home) {
+        if ((back || (IsKeyPressed(KEY_ESCAPE) && !AnyTextFocused())) && app.current != SceneId::Home && app.current != SceneId::Login) {
             if (app.hasReturn) {
                 SceneId to = app.returnScene;
                 std::string param = app.returnParam;

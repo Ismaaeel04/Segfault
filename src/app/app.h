@@ -21,7 +21,8 @@ inline const char* TopicName(int s) { return SectionName(s); }
 inline Color TopicColor(int s) { return SectionColor(s); }
 
 // ------------------------------------------------------------- scenes -----
-enum class SceneId { Home, Study, Practice, Mock, Quiz, Visualizer, ListLab, Grid, Count };
+// New scenes go before Count: --shot selects a scene by its number.
+enum class SceneId { Home, Study, Practice, Mock, Quiz, Visualizer, ListLab, Grid, Login, Count };
 
 class Scene {
 public:
@@ -65,7 +66,10 @@ struct App {
     std::string returnParam;
 
     std::string resourceDir;
-    std::string dataDir;                  // progress + saved code
+    std::string dataDir;                  // folder that holds the accounts
+    std::string user;                     // logged-in student ("" = nobody)
+    std::string userDir;                  // that student's progress + saved code
+    bool signOutRequested = false;        // handled by main between frames
     Progress progress;
     std::string consoleCapture;           // text printed by exam functions
 
@@ -88,7 +92,12 @@ struct CaptureOutput {
 
 float SectionMastery(int section);   // 0..1 (lessons + solved problems + quiz)
 
-// Saved student code per problem (data/code/<id>.cpp)
+// Makes this student current, loads their progress and opens the home screen.
+void SignIn(const std::string& username);
+// Forgets the current student. Scenes must be rebuilt: main does both.
+void SignOut();
+
+// Saved student code per problem (<userDir>/segfault_code/<id>.cpp)
 std::string LoadSavedCode(const std::string& key);
 void SaveCode(const std::string& key, const std::string& code);
 
@@ -102,6 +111,7 @@ namespace sources {
 }
 
 // Scene factories (scenes/*.cpp)
+Scene* CreateLoginScene();
 Scene* CreateHomeScene();
 Scene* CreateStudyScene();
 Scene* CreatePracticeScene();
