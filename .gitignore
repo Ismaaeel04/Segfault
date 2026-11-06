@@ -1,0 +1,8 @@
+build/
+build-*/
+cmake-build-*/
+out/
+.vs/
+*.user
+segfault_progress.txt
+.DS_Store
