@@ -11,6 +11,19 @@ static int LeadingSpaces(const std::string& s) {
     return n;
 }
 static bool IsWordChar(char c) { return std::isalnum((unsigned char)c) || c == '_'; }
+static char ClosingPair(char c) {
+    switch (c) {
+        case '(': return ')';
+        case '[': return ']';
+        case '{': return '}';
+        case '"': return '"';
+        case '\'': return '\'';
+        default: return 0;
+    }
+}
+static bool IsClosingDelimiter(char c) {
+    return c == ')' || c == ']' || c == '}' || c == '"' || c == '\'';
+}
 
 void CodeEditor::SetText(const std::string& text) {
     lines.clear();
@@ -113,8 +126,37 @@ void CodeEditor::InsertText(const std::string& raw) {
 
 void CodeEditor::InsertChar(char c) {
     PushUndo(1);
+    char close = ClosingPair(c);
+    int y0, x0, y1, x1;
+    if (close && SelRange(y0, x0, y1, x1)) {
+        // wrap the active selection in the delimiter pair
+        lines[y1].insert(lines[y1].begin() + x1, close);
+        lines[y0].insert(lines[y0].begin() + x0, c);
+        ay = y0; ax = x0 + 1;
+        cy = y1; cx = x1 + (y0 == y1 ? 1 : 0);
+        hasSel = true;
+        return;
+    }
     DeleteSelection();
     std::string& l = lines[cy];
+    // step over an existing closing delimiter instead of duplicating it
+    if (IsClosingDelimiter(c) && cx < (int)l.size() && l[cx] == c) {
+        bool escaped = (c == '"' || c == '\'') && cx > 0 && l[cx - 1] == '\\';
+        if (!escaped) { cx++; return; }
+    }
+    // auto-close brackets and quotes when followed by whitespace, punctuation or end of line
+    if (close) {
+        char next = cx < (int)l.size() ? l[cx] : '\0';
+        char prev = cx > 0 ? l[cx - 1] : '\0';
+        bool canCloseNext = next == '\0' || next == ' ' || next == ')' || next == ']' ||
+                            next == '}' || next == ';' || next == ',';
+        bool quoteBlocked = (c == '"' || c == '\'') && (prev == '\\' || IsWordChar(prev) || prev == c);
+        if (canCloseNext && !quoteBlocked) {
+            l.insert(cx, {c, close});
+            cx++;
+            return;
+        }
+    }
     // typing '}' on an indent-only line: dedent one level
     if (c == '}' && LeadingSpaces(l) == (int)l.size() && cx == (int)l.size() && cx >= 4) {
         l.erase(0, 4);
@@ -157,6 +199,13 @@ void CodeEditor::Backspace() {
     hasSel = false;
     std::string& l = lines[cy];
     if (cx > 0) {
+        // deleting the opening character of an empty pair removes both characters
+        char close = ClosingPair(l[cx - 1]);
+        if (close && cx < (int)l.size() && l[cx] == close) {
+            l.erase(cx - 1, 2);
+            cx--;
+            return;
+        }
         int lead = LeadingSpaces(l);
         int n = 1;
         if (cx <= lead && cx % 4 == 0) n = 4;     // remove one indent level
