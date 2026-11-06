@@ -87,3 +87,6 @@ add_test(NAME auth COMMAND auth_tests)
 
 add_executable(scrollbar_tests tests/test_scrollbar.cpp)
 add_test(NAME scrollbar COMMAND scrollbar_tests)
+
+add_executable(bracket_tests tests/test_brackets.cpp)
+add_test(NAME brackets COMMAND bracket_tests)
