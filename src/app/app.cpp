@@ -1,5 +1,6 @@
 #include "app.h"
 #include "auth.h"
+#include "theme.h"
 #include "ui.h"
 #include "content/content.h"
 #include "exam_output.h"
@@ -34,7 +35,7 @@ Color SectionColor(int s) {
     static const Color c[S_COUNT] = {{45, 212, 191, 255}, {94, 234, 212, 255}, {56, 189, 248, 255},
                                      {163, 230, 53, 255}, {250, 204, 21, 255}, {251, 146, 60, 255},
                                      {249, 115, 22, 255}, {192, 132, 252, 255}, {244, 114, 182, 255}};
-    return (s >= 0 && s < S_COUNT) ? c[s] : ui::col::accent;
+    return (s >= 0 && s < S_COUNT) ? ui::Tone(c[s]) : ui::col::accent;
 }
 
 // ============================================================ progress =====
@@ -74,6 +75,7 @@ void Progress::Load(const std::string& file) {
         else if (key == "best") { std::string k; int v; in >> k >> v; best[k] = v; }
         else if (key == "answered") in >> quizAnswered;
         else if (key == "correct") in >> quizCorrect;
+        else if (key == "theme") in >> theme;
         else { std::string rest; std::getline(in, rest); }
     }
 }
@@ -83,15 +85,17 @@ void Progress::Save() const {
     std::ofstream out(path);
     if (!out) return;
     out << "xp " << xp << "\nanswered " << quizAnswered << "\ncorrect " << quizCorrect << "\n";
+    if (!theme.empty()) out << "theme " << theme << "\n";
     for (auto& d : done) out << "done " << d << "\n";
     for (int m : mistakes) out << "mistake " << m << "\n";
     for (auto& b : best) out << "best " << b.first << " " << b.second << "\n";
 }
 
 void Progress::Reset() {
-    std::string p = path;
+    std::string p = path, t = theme;
     *this = Progress();
     path = p;
+    theme = t;
     Save();
 }
 
@@ -109,7 +113,23 @@ void SignIn(const std::string& username) {
     app.userDir = auth::UserStore(app.dataDir + "segfault_users").UserDir(username);
     app.progress = Progress();
     app.progress.Load(app.userDir + "segfault_progress.txt");
+    if (!app.progress.theme.empty()) ui::ApplyTheme(ui::ThemeIndex(app.progress.theme));
     app.Go(SceneId::Home);
+}
+
+static std::string LastThemePath() { return app.dataDir + "segfault_theme.txt"; }
+
+void SelectTheme(int index) {
+    ui::ApplyTheme(index);
+    const char* id = ui::Themes()[ui::CurrentTheme()].id;
+    std::ofstream(LastThemePath()) << id << "\n";
+    if (!app.user.empty()) { app.progress.theme = id; app.progress.Save(); }
+}
+
+void LoadLastTheme() {
+    std::ifstream in(LastThemePath());
+    std::string id;
+    if (in >> id) ui::ApplyTheme(ui::ThemeIndex(id));
 }
 
 void SignOut() {

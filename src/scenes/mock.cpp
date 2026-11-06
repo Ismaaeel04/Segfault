@@ -116,7 +116,7 @@ private:
 
     // -------------------------------------------------------------- setup --
     void Setup() {
-        Text("Mock Exam", 32, 86, 30, WHITE, F_DISPLAY);
+        Text("Mock Exam", 32, 86, 30, col::heading, F_DISPLAY);
         RichText({34, 128, 900, 0},
                  "The real exam is not multiple choice: you **write code**. A mock exam gives you a few problems and a timer. "
                  "You can run the **example** tests as often as you like. When you submit, **hidden tests** grade every problem.",
@@ -127,9 +127,9 @@ private:
             bool hover = InputEnabled() && MouseIn(r);
             Panel(r, hover ? col::panelHi : col::panel, 16);
             if (hover) RoundRectLines(r, 16, 1.5f, i == 2 ? col::accent2 : col::accent);
-            Color c = i == 0 ? Color{56, 189, 248, 255} : i == 1 ? col::pointer : col::accent2;
+            Color c = i == 0 ? col::stack : i == 1 ? col::pointer : col::accent2;
             Text(i == 2 ? "WARM-UP" : ("PAPER " + std::to_string(i + 1)).c_str(), r.x + 28, r.y + 26, 13, c, F_BOLD);
-            Text(pp.title, r.x + 28, r.y + 50, 22, WHITE, F_HEAVY);
+            Text(pp.title, r.x + 28, r.y + 50, 22, col::heading, F_HEAVY);
             Text(pp.blurb, r.x + 28, r.y + 84, 15, col::dim, F_MEDIUM);
             int n = pp.counts[0] + pp.counts[1] + pp.counts[2];
             float y = r.y + 126;
@@ -152,7 +152,7 @@ private:
         }
         Rectangle info = {32, 560, 1224, 212};
         Panel(info, col::panel, 16);
-        Text("How it works", info.x + 28, info.y + 22, 18, WHITE, F_HEAVY);
+        Text("How it works", info.x + 28, info.y + 22, 18, col::heading, F_HEAVY);
         RichText({info.x + 28, info.y + 56, 560, 0},
                  "- Switch between problems with the tabs at the top.\n"
                  "- **Run examples** (Ctrl+Enter) shows only the example cases.\n"
@@ -187,7 +187,7 @@ private:
                 dot = rep.status == RunReport::CompileError ? col::danger : exOk && !rep.cases.empty() ? col::success : col::warn;
             }
             DrawCircleV({r.x + 16, r.y + 20}, 4.5f, dot);
-            Text(Ellipsize(label, 14.5f, F_BOLD, w - 40), r.x + 28, r.y + 11, 14.5f, active ? WHITE : col::dim, F_BOLD);
+            Text(Ellipsize(label, 14.5f, F_BOLD, w - 40), r.x + 28, r.y + 11, 14.5f, active ? col::heading : col::dim, F_BOLD);
             if (Clicked(r)) current = (int)i;
             x += w + 8;
         }
@@ -208,7 +208,7 @@ private:
         DrawRectangleRec({0, 0, W, H}, Alpha(BLACK, 0.6f));
         Rectangle r = {W / 2 - 250, H / 2 - 110, 500, 220};
         Panel(r, col::panel, 16);
-        Text("Submit the exam?", r.x + 30, r.y + 28, 23, WHITE, F_HEAVY);
+        Text("Submit the exam?", r.x + 30, r.y + 28, 23, col::heading, F_HEAVY);
         RichText({r.x + 30, r.y + 70, r.width - 60, 0}, "Every problem will be graded with all its tests, including the hidden ones. You cannot change your code afterwards.", 15, col::dim);
         if (Button({r.x + 30, r.y + 150, 205, 44}, "Keep working")) confirm = false;
         if (Button({r.x + 265, r.y + 150, 205, 44}, "Submit", BTN_SUCCESS)) Submit();
@@ -225,7 +225,7 @@ private:
         Rectangle r = {W / 2 - 260, 260, 520, 220};
         Panel(r, col::panel, 18);
         DrawSpinner({r.x + r.width / 2, r.y + 70}, 26, col::accent);
-        TextCenter("Grading your exam...", {r.x, r.y + 116, r.width, 30}, 21, WHITE, F_HEAVY);
+        TextCenter("Grading your exam...", {r.x, r.y + 116, r.width, 30}, 21, col::heading, F_HEAVY);
         std::string sub = "Problem " + std::to_string(std::min(gradeIndex + 1, (int)probs.size())) + " of " + std::to_string(probs.size());
         TextCenter(sub, {r.x, r.y + 152, r.width, 24}, 15, col::dim, F_MEDIUM);
         ProgressBar({r.x + 60, r.y + 188, r.width - 120, 6}, (float)gradeIndex / probs.size(), col::accent);
@@ -255,14 +255,14 @@ private:
         int score = Score();
         Rectangle left = {24, 80, 420, 704};
         Panel(left, col::panel, 16);
-        Text(paper->title, left.x + 28, left.y + 24, 19, WHITE, F_HEAVY);
+        Text(paper->title, left.x + 28, left.y + 24, 19, col::heading, F_HEAVY);
         int used = (int)(endTime - startTime);
         Text("Time used: " + std::to_string(used / 60) + " min " + std::to_string(used % 60) + " s", left.x + 28, left.y + 54, 14, col::dim, F_MEDIUM);
         Color sc = score >= 70 ? col::success : score >= 40 ? col::warn : col::danger;
         Vector2 c = {left.x + left.width / 2, left.y + 180};
         DrawRing(c, 70, 82, -90, 270, 64, col::panelHi);
         if (score > 0) DrawRing(c, 70, 82, -90, -90 + 3.6f * score, 64, sc);
-        TextCenter(std::to_string(score) + "%", {c.x - 70, c.y - 26, 140, 40}, 38, WHITE, F_DISPLAY);
+        TextCenter(std::to_string(score) + "%", {c.x - 70, c.y - 26, 140, 40}, 38, col::heading, F_DISPLAY);
         TextCenter(score >= 70 ? "Exam ready" : score >= 40 ? "Getting there" : "Keep practising", {c.x - 90, c.y + 18, 180, 20}, 14, sc, F_BOLD);
         float y = left.y + 290;
         for (size_t i = 0; i < probs.size(); i++) {
@@ -271,7 +271,7 @@ private:
             bool sel = (int)i == reviewSel;
             RoundRect(row, 10, sel ? col::panelHi : col::bg2);
             if (sel) RoundRectLines(row, 10, 1.5f, col::accent);
-            Text(Ellipsize(std::to_string(i + 1) + ". " + probs[i]->title, 15.5f, F_BOLD, row.width - 110), row.x + 16, row.y + 11, 15.5f, WHITE, F_BOLD);
+            Text(Ellipsize(std::to_string(i + 1) + ". " + probs[i]->title, 15.5f, F_BOLD, row.width - 110), row.x + 16, row.y + 11, 15.5f, col::heading, F_BOLD);
             Text(untouched[i] ? "Not attempted" : StatusText(g.status), row.x + 16, row.y + 36, 13, untouched[i] ? col::faint : StatusColor(g.status), F_BOLD);
             std::string frac = std::to_string(untouched[i] ? 0 : g.passed) + "/" + std::to_string(g.total);
             TextRight(frac, row.x + row.width - 16, row.y + 12, 16, g.total && g.passed == g.total ? col::success : col::text, F_HEAVY);

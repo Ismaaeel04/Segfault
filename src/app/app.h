@@ -39,6 +39,7 @@ struct Progress {
     std::set<int> mistakes;              // quiz question ids waiting for review
     std::map<std::string, int> best;     // best scores ("mock:1", "quiz:streak", ...)
     int quizAnswered = 0, quizCorrect = 0;
+    std::string theme;                   // theme id chosen by this student ("" = not chosen)
     std::string path;
 
     bool Has(const std::string& key) const { return done.count(key) > 0; }
@@ -70,6 +71,7 @@ struct App {
     std::string user;                     // logged-in student ("" = nobody)
     std::string userDir;                  // that student's progress + saved code
     bool signOutRequested = false;        // handled by main between frames
+    bool themePickerOpen = false;
     Progress progress;
     std::string consoleCapture;           // text printed by exam functions
 
@@ -96,6 +98,11 @@ float SectionMastery(int section);   // 0..1 (lessons + solved problems + quiz)
 void SignIn(const std::string& username);
 // Forgets the current student. Scenes must be rebuilt: main does both.
 void SignOut();
+
+// Applies a theme and remembers it for this student and this computer.
+void SelectTheme(int index);
+void LoadLastTheme();   // the login screen uses whichever theme was used last
+void ThemePicker();     // scenes/theme_picker.cpp: draws the window, main opens it
 
 // Saved student code per problem (<userDir>/segfault_code/<id>.cpp)
 std::string LoadSavedCode(const std::string& key);

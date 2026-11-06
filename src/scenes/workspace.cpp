@@ -118,7 +118,7 @@ float Workspace::DescContent(Rectangle r, bool draw) {
         if (draw) Text(s, x, y, size, c, k);
     };
     // title + badges
-    for (const std::string& line : Wrap(p.title, 25, F_HEAVY, w)) { txt(line, 25, WHITE, F_HEAVY); y += 32; }
+    for (const std::string& line : Wrap(p.title, 25, F_HEAVY, w)) { txt(line, 25, col::heading, F_HEAVY); y += 32; }
     y += 6;
     float bx = x;
     if (draw) {
@@ -132,7 +132,7 @@ float Workspace::DescContent(Rectangle r, bool draw) {
 
     for (size_t i = 0; i < p.examples.size(); i++) {
         const Example& e = p.examples[i];
-        txt("Example " + std::to_string(i + 1), 15, WHITE, F_BOLD);
+        txt("Example " + std::to_string(i + 1), 15, col::heading, F_BOLD);
         y += 26;
         // body
         float lh = 21, pad = 14;
@@ -177,7 +177,7 @@ float Workspace::DescContent(Rectangle r, bool draw) {
         y += h + 16;
     }
     if (!p.constraints.empty()) {
-        txt("Constraints", 15, WHITE, F_BOLD);
+        txt("Constraints", 15, col::heading, F_BOLD);
         y += 26;
         for (const std::string& c : SplitLines(p.constraints)) {
             if (c.empty()) continue;
@@ -242,7 +242,7 @@ void Workspace::Description(Rectangle r) {
     } else {
         if (!solutionUnlocked) {
             float y = view.y + 8;
-            Text("Solve it first", view.x, y, 21, WHITE, F_HEAVY);
+            Text("Solve it first", view.x, y, 21, col::heading, F_HEAVY);
             RichText({view.x, y + 36, view.width, 0},
                      "The solution unlocks when all tests pass. Writing it yourself is what you will have to do in the exam - "
                      "if you are stuck, try the **Hints** tab first.", 15.5f, col::dim);
@@ -295,7 +295,7 @@ void Workspace::Console(Rectangle r) {
         const Compiler* c = runner::Active();
         char buf[64];
         snprintf(buf, sizeof(buf), "%.1fs", job.Elapsed());
-        Text(std::string("Compiling and running") + (c ? " with " + c->label : "") + "...", body.x + 40, body.y + 12, 16, WHITE, F_BOLD);
+        Text(std::string("Compiling and running") + (c ? " with " + c->label : "") + "...", body.x + 40, body.y + 12, 16, col::heading, F_BOLD);
         Text(buf, body.x + 40, body.y + 38, 13.5f, col::dim, F_MEDIUM);
         return;
     }
@@ -347,6 +347,7 @@ void Workspace::Console(Rectangle r) {
         for (size_t i = 0; i < lines.size(); i++)
             Text(lines[i], body.x, body.y + i * lh - consoleScroll.y, 14, rep.stdoutText.empty() ? col::faint : col::text, F_MONO);
         EndClip();
+        ScrollBar(body, lines.size() * lh, consoleScroll);
         return;
     }
 
@@ -409,7 +410,7 @@ void Workspace::Console(Rectangle r) {
         RoundRect(chip, 8, sel ? Alpha(cc, 0.22f) : col::bg2);
         if (sel) RoundRectLines(chip, 8, 1.5f, cc);
         DrawCircleV({chip.x + 13, chip.y + 15}, 4, cc);
-        Text(label, chip.x + 23, chip.y + 7, 13.5f, sel ? WHITE : col::text, F_BOLD);
+        Text(label, chip.x + 23, chip.y + 7, 13.5f, sel ? col::heading : col::text, F_BOLD);
         if (Clicked(chip)) selCase = (int)i;
         cx += w + 6;
     }

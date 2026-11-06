@@ -1,4 +1,6 @@
 #include "ui.h"
+#include "scrollbar.h"
+#include "theme.h"
 #include <algorithm>
 #include <cctype>
 #include <cmath>
@@ -7,28 +9,6 @@
 #include <set>
 
 namespace ui {
-
-// ============================================================== colours ====
-namespace col {
-    const Color bg       = {11, 13, 19, 255};
-    const Color bg2      = {16, 19, 27, 255};
-    const Color panel    = {22, 26, 37, 255};
-    const Color panelHi  = {31, 37, 52, 255};
-    const Color border   = {45, 53, 74, 255};
-    const Color text     = {236, 239, 246, 255};
-    const Color dim      = {163, 171, 192, 255};
-    const Color faint    = {106, 115, 140, 255};
-    const Color accent   = {139, 108, 255, 255};   // violet
-    const Color accent2  = {45, 212, 191, 255};    // teal
-    const Color warn     = {251, 191, 36, 255};
-    const Color danger   = {248, 113, 113, 255};
-    const Color success  = {74, 222, 128, 255};
-    const Color pointer  = {251, 146, 60, 255};    // pointers are always orange
-    const Color heap     = {192, 132, 252, 255};
-    const Color stack    = {96, 165, 250, 255};
-    const Color codeBg   = {14, 17, 25, 255};
-    const Color codeLine = {139, 108, 255, 46};
-}
 
 Color Mix(Color a, Color b, float t) {
     t = std::clamp(t, 0.0f, 1.0f);
@@ -233,10 +213,10 @@ float RichText(Rectangle r, const std::string& text, float size, Color c, bool d
                     float pw = Measure(p.s, ps, StyleFont(p.style)).x;
                     if (p.style == 2) {
                         RoundRect({px, y + 1, pw + 4, size * 1.25f}, 4, Alpha(col::accent, 0.16f));
-                        Text(p.s, px + 2, y + (size - ps) * 0.5f + 1, ps, Mix(col::accent, WHITE, 0.45f), F_MONO);
+                        Text(p.s, px + 2, y + (size - ps) * 0.5f + 1, ps, Mix(col::accent, col::heading, 0.45f), F_MONO);
                         px += pw + 4;
                     } else {
-                        Text(p.s, px, y, ps, p.style == 1 ? WHITE : c, StyleFont(p.style));
+                        Text(p.s, px, y, ps, p.style == 1 ? col::heading : c, StyleFont(p.style));
                         px += pw;
                     }
                 }
@@ -259,9 +239,53 @@ void RoundRectLines(Rectangle r, float radius, float thick, Color c) {
     if (m <= 0) return;
     DrawRectangleRoundedLinesEx(r, std::min(1.0f, radius * 2 / m), 8, thick, c);
 }
+void Shadow(Rectangle r, float radius, float strength) {
+    for (int i = 4; i >= 1; i--) {
+        float g = i * 2.0f;
+        RoundRect({r.x - g, r.y - g + 3, r.width + g * 2, r.height + g * 2}, radius + g, Alpha(col::shadow, 0.045f * strength));
+    }
+}
+
 void Panel(Rectangle r, Color fill, float radius) {
-    RoundRect(r, radius, fill);
-    RoundRectLines(r, radius, 1, Alpha(col::border, 0.7f));
+    Shadow(r, radius);
+    if (fill.a == 255) {
+        // A lighter line along the top edge, as if lit from above.
+        RoundRect(r, radius, Mix(fill, WHITE, 0.09f));
+        RoundRect({r.x, r.y + 1, r.width, r.height - 1}, radius, fill);
+    } else {
+        RoundRect(r, radius, fill);
+    }
+    RoundRectLines(r, radius, 1, Alpha(col::border, 0.6f));
+}
+
+void GradientRoundRect(Rectangle r, float radius, Color left, Color right) {
+    if (r.width <= 0 || r.height <= 0) return;
+    radius = std::min(radius, std::min(r.width, r.height) / 2);
+    // raylib has no rounded gradient, so it is drawn one pixel row at a time.
+    const float step = 1.0f / gScale;
+    for (float y = 0; y < r.height; y += step) {
+        float h = std::min(step, r.height - y);
+        float mid = y + h / 2;
+        float d = mid < radius ? radius - mid : mid > r.height - radius ? mid - (r.height - radius) : 0;
+        float inset = radius - std::sqrt(std::max(0.0f, radius * radius - d * d));
+        DrawRectangleGradientEx({r.x + inset, r.y + y, r.width - inset * 2, h}, left, left, right, right);
+    }
+}
+
+void SoftGlow(Vector2 center, float radius, Color c, float strength) {
+    // Stacked faint circles fade smoothly; a single low-alpha gradient shows facets.
+    const int layers = 24;
+    for (int i = 0; i < layers; i++)
+        DrawCircleV(center, radius * (1.0f - (float)i / layers), Alpha(c, strength / layers));
+}
+
+void Backdrop(float time) {
+    bool light = Themes()[CurrentTheme()].light;
+    DrawRectangleGradientV(0, 0, (int)W, (int)H, col::bg, Mix(col::bg, col::bg2, 0.8f));
+    float a = light ? 0.13f : 0.11f;
+    float dx = std::sin(time * 0.13f) * 30, dy = std::cos(time * 0.11f) * 20;
+    SoftGlow({1080 + dx, 90 + dy}, 560, col::accent, a);
+    SoftGlow({140 - dx, 760 - dy}, 520, col::accent2, a * 0.7f);
 }
 
 static void ArrowHead(Vector2 tip, Vector2 dir, Color c, float head) {
@@ -310,7 +334,8 @@ void DotGrid(Rectangle r, float gap, Color c) {
 
 float Badge(float x, float y, const std::string& s, Color c, float size) {
     float w = Measure(s, size, F_BOLD).x + 16;
-    RoundRect({x, y, w, size + 10}, (size + 10) / 2, Alpha(c, 0.18f));
+    RoundRect({x, y, w, size + 10}, (size + 10) / 2, Alpha(c, 0.16f));
+    RoundRectLines({x, y, w, size + 10}, (size + 10) / 2, 1, Alpha(c, 0.32f));
     Text(s, x + 8, y + 5, size, c, F_BOLD);
     return w;
 }
@@ -322,8 +347,8 @@ bool Button(Rectangle r, const std::string& label, ButtonKind kind, bool enabled
     if (hover) gHand = true;
     Color fill, fg = col::text, line = {0, 0, 0, 0};
     switch (kind) {
-        case BTN_PRIMARY: fill = col::accent; fg = WHITE; break;
-        case BTN_SUCCESS: fill = Mix(col::success, col::bg, 0.25f); fg = {10, 30, 18, 255}; break;
+        case BTN_PRIMARY: fill = col::accent; fg = OnColor(col::accent); break;
+        case BTN_SUCCESS: fill = Mix(col::success, col::bg, 0.2f); fg = OnColor(fill); break;
         case BTN_DANGER:  fill = Alpha(col::danger, 0.18f); fg = col::danger; line = Alpha(col::danger, 0.5f); break;
         case BTN_GHOST:   fill = {0, 0, 0, 0}; line = col::border; break;
         default:          fill = col::panelHi; line = Alpha(col::border, 0.8f); break;
@@ -333,8 +358,13 @@ bool Button(Rectangle r, const std::string& label, ButtonKind kind, bool enabled
     if (!enabled) { fill = Alpha(fill, 0.4f); fg = Alpha(fg, 0.4f); line = Alpha(line, 0.4f); }
     Rectangle rr = r;
     if (down) { rr.y += 1; }
-    RoundRect(rr, 9, fill);
-    if (line.a) RoundRectLines(rr, 9, 1, line);
+    if (enabled && (kind == BTN_PRIMARY || kind == BTN_SUCCESS)) {
+        if (hover) Shadow(rr, 10, 1.6f);
+        GradientRoundRect(rr, 10, fill, Mix(fill, kind == BTN_PRIMARY ? col::accent2 : WHITE, 0.22f));
+    } else {
+        RoundRect(rr, 10, fill);
+    }
+    if (line.a) RoundRectLines(rr, 10, 1, line);
     TextCenter(label, rr, size, fg, F_BOLD);
     return enabled && Clicked(r);
 }
@@ -348,13 +378,13 @@ bool ListItem(Rectangle r, const std::string& title, const std::string& sub, boo
     if (hover) gHand = true;
     Color fill = selected ? Alpha(accent, 0.16f) : hover ? col::panelHi : Color{0, 0, 0, 0};
     RoundRect(r, 8, fill);
-    if (selected) DrawRectangleRec({r.x, r.y + 8, 3, r.height - 16}, accent);
+    if (selected) RoundRect({r.x, r.y + 8, 3, r.height - 16}, 1.5f, accent);
     float tx = r.x + 14;
     float maxW = r.width - 28 - (done ? 20 : 0);
     if (sub.empty()) {
-        Text(Ellipsize(title, 15, F_BOLD, maxW), tx, r.y + (r.height - 15) / 2 - 1, 15, selected ? WHITE : col::text, F_BOLD);
+        Text(Ellipsize(title, 15, F_BOLD, maxW), tx, r.y + (r.height - 15) / 2 - 1, 15, selected ? col::heading : col::text, F_BOLD);
     } else {
-        Text(Ellipsize(title, 15, F_BOLD, maxW), tx, r.y + 8, 15, selected ? WHITE : col::text, F_BOLD);
+        Text(Ellipsize(title, 15, F_BOLD, maxW), tx, r.y + 8, 15, selected ? col::heading : col::text, F_BOLD);
         Text(Ellipsize(sub, 12.5f, F_UI, maxW), tx, r.y + 28, 12.5f, col::dim, F_UI);
     }
     if (done) {
@@ -369,9 +399,13 @@ bool ListItem(Rectangle r, const std::string& title, const std::string& sub, boo
 bool Tab(Rectangle r, const std::string& label, bool active) {
     bool hover = gInput && MouseIn(r);
     if (hover) gHand = true;
-    if (active) RoundRect(r, 8, col::panelHi);
-    TextCenter(label, r, 15, active ? WHITE : hover ? col::text : col::dim, F_BOLD);
-    if (active) DrawRectangleRec({r.x + 12, r.y + r.height - 3, r.width - 24, 3}, col::accent);
+    if (active) {
+        RoundRect(r, 9, Alpha(col::accent, 0.14f));
+        RoundRectLines(r, 9, 1, Alpha(col::accent, 0.38f));
+    } else if (hover) {
+        RoundRect(r, 9, Alpha(col::panelHi, 0.7f));
+    }
+    TextCenter(label, r, 15, active ? col::heading : hover ? col::text : col::dim, F_BOLD);
     return Clicked(r);
 }
 
@@ -403,8 +437,9 @@ bool TextBox(Rectangle r, std::string& text, int id, int maxLen, bool numericOnl
         if ((IsKeyPressed(KEY_BACKSPACE) || IsKeyPressedRepeat(KEY_BACKSPACE)) && !text.empty()) text.pop_back();
         if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_KP_ENTER)) submitted = true;
     }
+    if (active) RoundRectLines({r.x - 3, r.y - 3, r.width + 6, r.height + 6}, 11, 3, Alpha(col::accent, 0.22f));
     RoundRect(r, 8, col::codeBg);
-    RoundRectLines(r, 8, active ? 2.0f : 1.0f, active ? col::accent : hover ? col::faint : col::border);
+    RoundRectLines(r, 8, active ? 1.5f : 1.0f, active ? col::accent : hover ? col::faint : col::border);
     float size = 16;
     float ty = r.y + (r.height - size) / 2;
     BeginClip({r.x + 4, r.y, r.width - 8, r.height});
@@ -423,12 +458,17 @@ bool TextBox(Rectangle r, std::string& text, int id, int maxLen, bool numericOnl
 void ProgressBar(Rectangle r, float t, Color fill, Color back) {
     t = std::clamp(t, 0.0f, 1.0f);
     RoundRect(r, r.height / 2, back);
-    if (t > 0) RoundRect({r.x, r.y, std::max(r.height, r.width * t), r.height}, r.height / 2, fill);
+    if (t > 0) {
+        Rectangle bar = {r.x, r.y, std::max(r.height, r.width * std::min(t, 1.0f)), r.height};
+        if (fill.a == 255) GradientRoundRect(bar, r.height / 2, fill, Mix(fill, col::heading, 0.22f));
+        else RoundRect(bar, r.height / 2, fill);
+    }
 }
 
 // ============================================================ scrolling ====
 void Scroll::Update(Rectangle view, float contentHeight) {
     float maxScroll = std::max(0.0f, contentHeight - view.height);
+    if (ScrollBarInput(view, contentHeight, y, target, dragging, grab)) return;
     if (gInput && MouseIn(view)) target -= GetMouseWheelMove() * 60.0f;
     target = std::clamp(target, 0.0f, maxScroll);
     y += (target - y) * std::min(1.0f, GetFrameTime() * 14.0f);
@@ -440,6 +480,47 @@ void Scroll::ScrollTo(float value, Rectangle view, float contentHeight) {
 }
 
 static std::vector<Rectangle> gClipStack;
+
+// A little wider than the thumb, so it is easy to hit.
+static Rectangle ScrollBarHitArea(Rectangle view) {
+    const float w = 14;
+    return {view.x + view.width - w, view.y, w, view.height};
+}
+
+bool OverScrollBar(Rectangle view, float contentHeight) {
+    if (!gInput || contentHeight <= view.height + 1 || !MouseIn(ScrollBarHitArea(view))) return false;
+    // A code block inside a lesson can be scrolled out of its panel.
+    return gClipStack.empty() || MouseIn(gClipStack.back());
+}
+
+bool ScrollBarInput(Rectangle view, float contentHeight, float& y, float& target, bool& dragging, float& grab) {
+    if (contentHeight <= view.height + 1 || !gInput) { dragging = false; return false; }
+    bool over = OverScrollBar(view, contentHeight);
+    if (over) gHand = true;
+    if (over && !gClickConsumed && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+        gClickConsumed = true;
+        ScrollThumb th = ThumbFor(view.y, view.height, contentHeight, y);
+        float my = Mouse().y;
+        // On the thumb: keep it under the mouse. On the track: jump there.
+        grab = (my >= th.top && my <= th.top + th.height) ? my - th.top : th.height / 2;
+        dragging = true;
+    }
+    if (!dragging) return false;
+    if (!IsMouseButtonDown(MOUSE_BUTTON_LEFT)) { dragging = false; return false; }
+    gHand = true;
+    target = y = ScrollForThumb(view.y, view.height, contentHeight, Mouse().y - grab);
+    return true;
+}
+
+void DrawScrollBar(Rectangle view, float contentHeight, float y, bool dragging) {
+    if (contentHeight <= view.height + 1) return;
+    bool hot = dragging || OverScrollBar(view, contentHeight);
+    float w = hot ? 8.0f : 4.0f;
+    ScrollThumb th = ThumbFor(view.y, view.height, contentHeight, y);
+    RoundRect({view.x + view.width - 2 - w, th.top, w, th.height}, w / 2,
+              dragging ? col::accent : Alpha(col::faint, hot ? 1.0f : 0.7f));
+}
+
 static void ApplyClip(Rectangle r) {
     BeginScissorMode((int)std::floor(r.x * gScale), (int)std::floor(r.y * gScale),
                      (int)std::ceil(r.width * gScale), (int)std::ceil(r.height * gScale));
@@ -462,11 +543,7 @@ void EndClip() {
 }
 
 void ScrollBar(Rectangle view, float contentHeight, const Scroll& s) {
-    if (contentHeight <= view.height + 1) return;
-    float trackH = view.height - 8;
-    float h = std::max(30.0f, trackH * view.height / contentHeight);
-    float t = s.y / (contentHeight - view.height);
-    RoundRect({view.x + view.width - 6, view.y + 4 + (trackH - h) * t, 4, h}, 2, Alpha(col::faint, 0.7f));
+    DrawScrollBar(view, contentHeight, s.y, s.dragging);
 }
 
 // ================================================================= code ====
@@ -493,11 +570,11 @@ void CodeLine(float x, float y, const std::string& rawLine, float size, float al
     std::string line;
     for (char c : rawLine) { if (c == '\t') line += "    "; else line += c; }
     float cw = CodeCharWidth(size);
-    const Color cText = Alpha({214, 220, 236, 255}, alpha), cType = Alpha({103, 232, 249, 255}, alpha),
-                cKey = Alpha({196, 167, 255, 255}, alpha), cNum = Alpha({253, 186, 116, 255}, alpha),
-                cStr = Alpha({134, 239, 172, 255}, alpha), cCom = Alpha({100, 110, 136, 255}, alpha),
-                cFn = Alpha({250, 224, 120, 255}, alpha), cPtr = Alpha(col::pointer, alpha),
-                cPre = Alpha({244, 143, 177, 255}, alpha), cPunct = Alpha({150, 160, 186, 255}, alpha);
+    const Color cText = Alpha(col::synText, alpha), cType = Alpha(col::synType, alpha),
+                cKey = Alpha(col::synKey, alpha), cNum = Alpha(col::synNum, alpha),
+                cStr = Alpha(col::synStr, alpha), cCom = Alpha(col::synCom, alpha),
+                cFn = Alpha(col::synFn, alpha), cPtr = Alpha(col::pointer, alpha),
+                cPre = Alpha(col::synPre, alpha), cPunct = Alpha(col::synPunct, alpha);
     size_t i = 0;
     auto put = [&](size_t start, size_t len, Color c) {
         Text(line.substr(start, len), x + start * cw, y, size, c, F_MONO);
@@ -563,7 +640,9 @@ void CodeView(Rectangle r, const std::vector<std::string>& lines, Scroll& scroll
     float gutter = CodeCharWidth(size * 0.85f) * 3 + 18;
     Rectangle view = {r.x, r.y + pad, r.width, r.height - pad * 2};
     float contentH = lines.size() * lh;
-    if (autoScroll && highlight >= 0) {
+    // Only when the line changes: afterwards the student can scroll away from it.
+    if (autoScroll && highlight >= 0 && highlight != scroll.lastAuto) {
+        scroll.lastAuto = highlight;
         float hy = highlight * lh;
         if (hy < scroll.target + lh || hy > scroll.target + view.height - lh * 2)
             scroll.ScrollTo(hy - view.height / 2 + lh, view, contentH);
@@ -604,9 +683,10 @@ void DrawToasts(float dt) {
         float a = t.t < 0.2f ? t.t / 0.2f : t.t > 2.2f ? std::max(0.0f, 1 - (t.t - 2.2f) / 0.4f) : 1;
         float w = Measure(t.msg, 15, F_BOLD).x + 40;
         Rectangle r = {W / 2 - w / 2, y - (1 - a) * 10, w, 36};
-        RoundRect(r, 18, Alpha(Mix(col::panelHi, t.c, 0.2f), a));
+        Shadow(r, 18, a * 1.5f);
+        RoundRect(r, 18, Alpha(Mix(col::panel, t.c, 0.16f), a));
         RoundRectLines(r, 18, 1.5f, Alpha(t.c, a));
-        TextCenter(t.msg, r, 15, Alpha(WHITE, a), F_BOLD);
+        TextCenter(t.msg, r, 15, Alpha(col::heading, a), F_BOLD);
         y += 44;
     }
     gToasts.erase(std::remove_if(gToasts.begin(), gToasts.end(), [](const ToastMsg& t) { return t.t > 2.6f; }),

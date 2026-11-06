@@ -88,7 +88,7 @@ private:
             RoundRect(num, 8, done == total && total ? sc : Alpha(sc, 0.16f));
             char nb[4]; snprintf(nb, sizeof(nb), "%02d", s + 1);
             TextCenter(nb, num, 13, done == total && total ? col::bg : sc, F_HEAVY);
-            Text(Ellipsize(SectionName(s), 15.5f, F_BOLD, hdr.width - 110), hdr.x + 52, hdr.y + 9, 15.5f, WHITE, F_BOLD);
+            Text(Ellipsize(SectionName(s), 15.5f, F_BOLD, hdr.width - 110), hdr.x + 52, hdr.y + 9, 15.5f, col::heading, F_BOLD);
             Text(std::to_string(done) + " of " + std::to_string(total) + " lessons", hdr.x + 52, hdr.y + 30, 12.5f, col::dim, F_MEDIUM);
             // chevron
             Vector2 cv = {hdr.x + hdr.width - 20, hdr.y + 26};
@@ -110,7 +110,7 @@ private:
                     DrawLineEx({c.x - 5, c.y}, {c.x - 1.5f, c.y + 4}, 2, col::success);
                     DrawLineEx({c.x - 1.5f, c.y + 4}, {c.x + 5, c.y - 4}, 2, col::success);
                 } else DrawCircleV({row.x + 18, row.y + 18}, 3, sel ? sc : col::faint);
-                Text(Ellipsize(ls[i].title, 14.5f, F_MEDIUM, row.width - 44), row.x + 34, row.y + 9, 14.5f, sel ? WHITE : col::text, sel ? F_BOLD : F_MEDIUM);
+                Text(Ellipsize(ls[i].title, 14.5f, F_MEDIUM, row.width - 44), row.x + 34, row.y + 9, 14.5f, sel ? col::heading : col::text, sel ? F_BOLD : F_MEDIUM);
                 if (hv && Clicked(row)) Select((int)i);
                 y += 40;
             }
@@ -143,7 +143,7 @@ private:
         Text(hs, x, y, 13, sc, F_HEAVY);
         TextRight("Lesson " + std::to_string(pos) + " of " + std::to_string(count), x + w, y, 13, col::dim, F_BOLD);
         y += 30;
-        for (const std::string& line : Wrap(L.title, 32, F_DISPLAY, w)) { Text(line, x, y, 32, WHITE, F_DISPLAY); y += 42; }
+        for (const std::string& line : Wrap(L.title, 32, F_DISPLAY, w)) { Text(line, x, y, 32, col::heading, F_DISPLAY); y += 42; }
         y += 2;
         y += RichText({x, y, w, 0}, L.summary, 18, col::dim) + 18;
         DrawRectangleRec({x, y, w, 1}, col::border);
@@ -284,7 +284,7 @@ private:
             // little play triangle
             DrawTriangle({ic.x + 17, ic.y + 13}, {ic.x + 17, ic.y + 31}, {ic.x + 31, ic.y + 22}, col::pointer);
             Text("INTERACTIVE DEMO", r.x + 80, r.y + 20, 12, col::pointer, F_HEAVY);
-            Text(Ellipsize(b.text, 17, F_BOLD, w - 280), r.x + 80, r.y + 42, 17, WHITE, F_BOLD);
+            Text(Ellipsize(b.text, 17, F_BOLD, w - 280), r.x + 80, r.y + 42, 17, col::heading, F_BOLD);
             if (Button({r.x + w - 170, r.y + 22, 150, 40}, "Open demo  >", BTN_DEFAULT, true, 15) && inView)
                 app.Open(b.scene, b.param, Lessons()[lesson].id);
             return r.height;
@@ -314,7 +314,7 @@ private:
                     DrawLineEx({c.x - 5, c.y}, {c.x - 1.5f, c.y + 4}, 2.2f, col::success);
                     DrawLineEx({c.x - 1.5f, c.y + 4}, {c.x + 5, c.y - 4}, 2.2f, col::success);
                 } else DrawRing({row.x + 24, row.y + 26}, 7, 9, 0, 360, 24, col::faint);
-                Text(p->title, row.x + 48, row.y + 16, 16, WHITE, F_BOLD);
+                Text(p->title, row.x + 48, row.y + 16, 16, col::heading, F_BOLD);
                 Text(DifficultyName(p->difficulty), row.x + w - 160, row.y + 17, 14.5f, DifficultyColor(p->difficulty), F_BOLD);
                 Text("Solve  >", row.x + w - 82, row.y + 17, 14.5f, hover ? col::success : col::dim, F_BOLD);
                 if (hover && Clicked(row)) app.Open(SceneId::Practice, p->id, Lessons()[lesson].id);
@@ -324,7 +324,7 @@ private:
         }
         case BlockType::Check: {
             int& ans = checkAnswer.emplace(bi, -1).first->second;
-            float qh = RichText({0, 0, w - 48, 0}, b.text, 17, WHITE, false);
+            float qh = RichText({0, 0, w - 48, 0}, b.text, 17, col::heading, false);
             // fixed shuffle per block
             std::vector<int> order(b.options.size());
             for (size_t k = 0; k < order.size(); k++) order[k] = (int)k;
@@ -337,7 +337,7 @@ private:
             RoundRect(card, 12, col::bg2);
             RoundRectLines(card, 12, 1, col::border);
             Text("QUICK CHECK", x + 24, y + 20, 12.5f, col::warn, F_HEAVY);
-            RichText({x + 24, y + 44, w - 48, 0}, b.text, 17, WHITE);
+            RichText({x + 24, y + 44, w - 48, 0}, b.text, 17, col::heading);
             float oy = y + 52 + qh + 6;
             for (size_t k = 0; k < order.size(); k++) {
                 int o = order[k];

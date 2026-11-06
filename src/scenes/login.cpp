@@ -4,6 +4,7 @@
 #include "app/app.h"
 #include "app/auth.h"
 #include "app/ui.h"
+#include <vector>
 
 using namespace ui;
 
@@ -20,12 +21,15 @@ public:
         bool submit = IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_KP_ENTER);
         if (IsKeyPressed(KEY_TAB)) CycleFocus();
 
-        Rectangle r = {W / 2 - 240, 96, 480, registering ? 592.0f : 472.0f};
-        Panel(r, col::panel, 18);
-        float x = r.x + 36, w = r.width - 72, y = r.y + 30;
-        Text(registering ? "Create your account" : "Welcome back", x, y, 28, WHITE, F_DISPLAY);
+        Rectangle outer = {140, 92, 1000, 668};
+        Panel(outer, col::panel, 20);
+        Brand({outer.x, outer.y, 420, outer.height});
+
+        float x = outer.x + 480, w = 460;
+        float y = outer.y + (outer.height - (registering ? 556.0f : 436.0f)) / 2;
+        Text(registering ? "Create your account" : "Welcome back", x, y, 30, col::heading, F_DISPLAY);
         Text(registering ? "Your progress and code are saved to your account." : "Log in to continue where you left off.",
-             x, y + 42, 15, col::dim, F_MEDIUM);
+             x, y + 44, 15, col::dim, F_MEDIUM);
 
         y += 84;
         if (Tab({x, y, w / 2 - 4, 42}, "Log in", !registering) && registering) Switch(false);
@@ -56,6 +60,58 @@ public:
     }
 
 private:
+    // The coloured panel on the left. Deep enough in every theme for white text.
+    void Brand(Rectangle r) {
+        const Color left = Mix(col::accent, BLACK, 0.5f);
+        const Color right = Mix(Mix(col::accent, col::accent2, 0.6f), BLACK, 0.62f);
+        GradientRoundRect(r, 20, left, right);
+        BeginClip(r);
+        SoftGlow({r.x + 360, r.y + 40}, 240, WHITE, 0.14f);
+        SoftGlow({r.x + 40, r.y + 640}, 260, BLACK, 0.28f);
+        DotGrid({r.x + 250, r.y + 20, 150, 110}, 18, Alpha(WHITE, 0.22f));
+        EndClip();
+
+        float x = r.x + 40, y = r.y + 44;
+        RoundRect({x, y, 56, 56}, 15, WHITE);
+        RoundRect({x + 15, y + 15, 26, 26}, 5, left);
+        DrawCircleV({x + 28, y + 28}, 6, col::pointer);
+        Text("Segfault", x, y + 78, 42, WHITE, F_DISPLAY);
+        Text("Learn C & C++ by writing it.", x, y + 132, 17, Alpha(WHITE, 0.85f), F_MEDIUM);
+
+        y += 190;
+        const char* points[3][2] = {{"Study", "Lessons with code you can step through"},
+                                    {"Practice", "50 problems, compiled and tested for real"},
+                                    {"Mock exams", "Timed papers marked by hidden tests"}};
+        for (const auto& p : points) {
+            DrawCircleV({x + 6, y + 10}, 5, WHITE);
+            Text(p[0], x + 24, y, 17, WHITE, F_BOLD);
+            Text(p[1], x + 24, y + 23, 13.5f, Alpha(WHITE, 0.82f), F_MEDIUM);
+            y += 58;
+        }
+
+        // a small code card, always in dark colours so it reads on any theme
+        Rectangle card = {x, r.y + r.height - 128, r.width - 80, 92};
+        RoundRect(card, 12, Alpha(BLACK, 0.42f));
+        RoundRectLines(card, 12, 1, Alpha(WHITE, 0.16f));
+        const float fs = 14.5f, cw = CodeCharWidth(fs);
+        struct Span { const char* s; Color c; };
+        const Color key = {196, 167, 255, 255}, num = {253, 186, 116, 255}, com = {170, 178, 200, 255}, txt = {232, 236, 246, 255};
+        const std::vector<std::vector<Span>> code = {
+            {{"int", key}, {" value = ", txt}, {"7", num}, {";", txt}},
+            {{"int", key}, {"* ptr = &value;", txt}},
+            {{"*ptr = ", txt}, {"42", num}, {";  ", txt}, {"// value is now 42", com}}};
+        float cy = card.y + 14;
+        for (const auto& line : code) {
+            float cx = card.x + 16;
+            for (const Span& sp : line) {
+                std::string part = sp.s;
+                Text(part, cx, cy, fs, sp.c, F_MONO);
+                cx += part.size() * cw;
+            }
+            cy += 22;
+        }
+    }
+
     bool registering = false;
     std::string username, password, confirm, error;
     int pendingFocus = 0;

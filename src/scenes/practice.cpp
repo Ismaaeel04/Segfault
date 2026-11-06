@@ -40,7 +40,7 @@ private:
         bool hover = InputEnabled() && MouseIn(r);
         RoundRect(r, 17, active ? Alpha(c, 0.22f) : hover ? col::panelHi : col::panel);
         RoundRectLines(r, 17, 1, active ? c : col::border);
-        TextCenter(label, r, 14, active ? WHITE : col::dim, F_BOLD);
+        TextCenter(label, r, 14, active ? col::heading : col::dim, F_BOLD);
         x += w + 8;
         return Clicked(r);
     }
@@ -53,7 +53,7 @@ private:
             solved += s; perDiff[p.difficulty]++; perDiffSolved[p.difficulty] += s;
         }
         // header
-        Text("Practice", 32, 86, 30, WHITE, F_DISPLAY);
+        Text("Practice", 32, 86, 30, col::heading, F_DISPLAY);
         Text("Write real C / C++ code and run it against tests - like LeetCode, built from your exam material.", 34, 126, 15.5f, col::dim, F_MEDIUM);
 
         // stats card
@@ -63,7 +63,7 @@ private:
         float t = ps.empty() ? 0 : (float)solved / ps.size();
         DrawRing(c, 30, 36, -90, 270, 48, col::panelHi);
         if (t > 0) DrawRing(c, 30, 36, -90, -90 + 360 * t, 48, col::success);
-        TextCenter(std::to_string(solved), {c.x - 30, c.y - 16, 60, 22}, 20, WHITE, F_HEAVY);
+        TextCenter(std::to_string(solved), {c.x - 30, c.y - 16, 60, 22}, 20, col::heading, F_HEAVY);
         TextCenter("/" + std::to_string(ps.size()), {c.x - 30, c.y + 6, 60, 14}, 12, col::dim, F_MEDIUM);
         for (int d = 0; d < 3; d++) {
             float y = st.y + 16 + d * 24;
@@ -117,7 +117,7 @@ private:
             RoundRect(row, 10, hover ? col::panelHi : (k % 2 ? Alpha(col::bg2, 0.6f) : Color{0, 0, 0, 0}));
             float ty = row.y + (row.height - 16) / 2 - 1;
             Text(std::to_string(rows[k] + 1), hx, ty, 15, col::faint, F_MEDIUM);
-            Text(p.title, colTitle, ty, 16, hover ? WHITE : col::text, F_BOLD);
+            Text(p.title, colTitle, ty, 16, hover ? col::heading : col::text, F_BOLD);
             if (p.cppOnly) Badge(colTitle + Measure(p.title, 16, F_BOLD).x + 12, ty - 2, "C++", col::accent, 11.5f);
             DrawCircleV({colSection + 5, row.y + row.height / 2}, 4, SectionColor(p.section));
             Text(SectionName(p.section), colSection + 16, ty + 1, 14.5f, col::dim, F_MEDIUM);

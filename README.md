@@ -37,6 +37,13 @@ but anyone with access to the folder can read or delete these files, and a forgo
 can't be recovered from inside the app. Progress saved by an older version moves to the first
 account created.
 
+## Themes
+
+The **Theme** button in the top bar opens a picker with seven themes: Midnight, Ocean, Forest,
+Ember and Arcade (dark), Paper and Sand (light). The choice applies straight away and is saved
+to the student's account. `--selftest` checks every theme's text and code colours for contrast.
+Palettes live in `src/app/theme.cpp`.
+
 ## How your code is compiled
 
 When you press Run, your code goes into a small test harness, gets compiled, and runs with a time
@@ -71,6 +78,7 @@ raylib is downloaded automatically the first time.
 ./build/pq_tests                  # 141 unit tests of the reference solutions
 ./build/auth_tests                # student accounts: hashing against published test vectors,
                                   # register, login, bad input, what ends up on disk
+./build/scrollbar_tests           # scrollbar geometry: thumb position and dragging
 ./build/Segfault --selftest   # compiles every problem's reference solution with every compiler
                                   # found and checks that all tests pass and every starter fails;
                                   # also checks lesson links and the visualizer programs

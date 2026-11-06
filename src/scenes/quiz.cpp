@@ -114,7 +114,7 @@ private:
 
     // ------------------------------------------------------------- setup --
     void Setup() {
-        Text("Quick Quiz", 32, 86, 30, WHITE, F_DISPLAY);
+        Text("Quick Quiz", 32, 86, 30, col::heading, F_DISPLAY);
         Text("Ten quick questions with an explanation after each one. Good for revising on the bus.", 34, 126, 16, col::dim, F_MEDIUM);
         for (int s = 0; s < S_COUNT; s++) {
             Rectangle r = {32 + (s % 3) * 300.0f, 170 + (s / 3) * 202.0f, 286, 188};
@@ -126,7 +126,7 @@ private:
             for (const Question& q : Questions()) if (q.section == s) { n++; done += app.progress.Has("q:" + std::to_string(q.id)); }
             char num[8]; snprintf(num, sizeof(num), "%02d", s + 1);
             Text(num, r.x + 22, r.y + 22, 14, sc, F_HEAVY);
-            Text(SectionName(s), r.x + 22, r.y + 48, 19, WHITE, F_HEAVY);
+            Text(SectionName(s), r.x + 22, r.y + 48, 19, col::heading, F_HEAVY);
             float y = r.y + 80;
             for (const std::string& l : Wrap(SectionShort(s), 14, F_UI, r.width - 44)) { Text(l, r.x + 22, y, 14, col::dim); y += 20; }
             Text(std::to_string(done) + " / " + std::to_string(n) + " mastered", r.x + 22, r.y + r.height - 44, 13.5f, col::text, F_BOLD);
@@ -136,7 +136,7 @@ private:
         Rectangle side = {944, 170, 312, 594};
         Panel(side, col::panel, 16);
         float y = side.y + 26;
-        Text("Mixed", side.x + 26, y, 21, WHITE, F_HEAVY);
+        Text("Mixed", side.x + 26, y, 21, col::heading, F_HEAVY);
         y += 36;
         RichText({side.x + 26, y, side.width - 52, 0}, "Questions from every section, in random order.", 15, col::dim);
         y += 56;
@@ -149,9 +149,9 @@ private:
         y += 24;
         const Progress& p = app.progress;
         int acc = p.quizAnswered ? (int)std::round(100.0 * p.quizCorrect / p.quizAnswered) : 0;
-        Text(std::to_string(p.quizAnswered), side.x + 26, y, 30, WHITE, F_DISPLAY);
+        Text(std::to_string(p.quizAnswered), side.x + 26, y, 30, col::heading, F_DISPLAY);
         Text("answers", side.x + 26, y + 38, 13.5f, col::dim, F_MEDIUM);
-        Text(p.quizAnswered ? std::to_string(acc) + "%" : "-", side.x + 166, y, 30, WHITE, F_DISPLAY);
+        Text(p.quizAnswered ? std::to_string(acc) + "%" : "-", side.x + 166, y, 30, col::heading, F_DISPLAY);
         Text("accuracy", side.x + 166, y + 38, 13.5f, col::dim, F_MEDIUM);
         y += 90;
         RichText({side.x + 26, y, side.width - 52, 0},
@@ -183,7 +183,7 @@ private:
         }
 
         float y = 146;
-        y += RichText({x, y, w, 0}, q->prompt, 21, WHITE) + 14;
+        y += RichText({x, y, w, 0}, q->prompt, 21, col::heading) + 14;
         if (!q->code.empty()) {
             auto lines = SplitLines(q->code);
             float h = std::min(230.0f, lines.size() * CodeLineHeight(15.5f) + 24);
@@ -242,12 +242,12 @@ private:
         int pct = qs.empty() ? 0 : (int)std::round(100.0 * correct / qs.size());
         Rectangle left = {24, 80, 400, 704};
         Panel(left, col::panel, 16);
-        Text("Round complete", left.x + 28, left.y + 26, 22, WHITE, F_HEAVY);
+        Text("Round complete", left.x + 28, left.y + 26, 22, col::heading, F_HEAVY);
         Color pc = pct >= 70 ? col::success : pct >= 40 ? col::warn : col::danger;
         Vector2 c = {left.x + left.width / 2, left.y + 190};
         DrawRing(c, 76, 90, -90, 270, 64, col::panelHi);
         if (pct > 0) DrawRing(c, 76, 90, -90, -90 + 3.6f * pct, 64, pc);
-        TextCenter(std::to_string(pct) + "%", {c.x - 80, c.y - 30, 160, 44}, 42, WHITE, F_DISPLAY);
+        TextCenter(std::to_string(pct) + "%", {c.x - 80, c.y - 30, 160, 44}, 42, col::heading, F_DISPLAY);
         TextCenter(std::to_string(correct) + " of " + std::to_string(qs.size()) + " correct", {c.x - 90, c.y + 20, 180, 20}, 14.5f, col::dim, F_BOLD);
         const char* msg = pct >= 90 ? "Excellent!" : pct >= 70 ? "Well done." : pct >= 40 ? "Getting there." : "Time to study this section again.";
         TextCenter(msg, {left.x, left.y + 300, left.width, 24}, 17, pc, F_BOLD);
@@ -262,7 +262,7 @@ private:
 
         Rectangle right = {440, 80, 816, 704};
         Panel(right, col::panel, 16);
-        Text("Your answers", right.x + 28, right.y + 24, 19, WHITE, F_HEAVY);
+        Text("Your answers", right.x + 28, right.y + 24, 19, col::heading, F_HEAVY);
         Rectangle view = {right.x + 16, right.y + 64, right.width - 32, right.height - 80};
         std::vector<float> hs;
         float contentH = 0;

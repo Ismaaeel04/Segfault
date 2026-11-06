@@ -605,14 +605,14 @@ private:
         if (!doubly) {
             Rectangle data = {b.x, b.y, 58, b.height}, next = {b.x + 58, b.y, b.width - 58, b.height};
             DrawRectangleRec({next.x, b.y + 6, 1, b.height - 12}, Alpha(col::border, a));
-            TextCenter(std::to_string(n.value), data, 20, Alpha(WHITE, a), F_MONOBOLD);
+            TextCenter(std::to_string(n.value), data, 20, Alpha(col::heading, a), F_MONOBOLD);
             Text("next", next.x + 8, b.y + 6, 10.5f, Alpha(col::dim, a), F_MONO);
             Text(addrOf(n.next), next.x + 8, b.y + 26, 12, Alpha(n.next >= 0 ? col::pointer : col::dim, a), F_MONO);
         } else {
             Rectangle prev = {b.x, b.y, 58, b.height}, data = {b.x + 58, b.y, 44, b.height}, next = {b.x + 102, b.y, 58, b.height};
             DrawRectangleRec({data.x, b.y + 6, 1, b.height - 12}, Alpha(col::border, a));
             DrawRectangleRec({next.x, b.y + 6, 1, b.height - 12}, Alpha(col::border, a));
-            TextCenter(std::to_string(n.value), data, 17, Alpha(WHITE, a), F_MONOBOLD);
+            TextCenter(std::to_string(n.value), data, 17, Alpha(col::heading, a), F_MONOBOLD);
             Text("prev", prev.x + 7, b.y + 5, 10, Alpha(col::dim, a), F_MONO);
             Text(addrOf(n.prev), prev.x + 5, b.y + 36, 11, Alpha(n.prev >= 0 ? col::accent2 : col::dim, a), F_MONO);
             Text("next", next.x + 7, b.y + 5, 10, Alpha(col::dim, a), F_MONO);
@@ -639,7 +639,7 @@ private:
             Rectangle lb = {lx, b.y + b.height / 2 - 12, w, 24};
             RoundRect(lb, 6, Alpha(col::accent, 0.2f));
             RoundRectLines(lb, 6, 1, col::accent);
-            TextCenter(name, lb, 13, Mix(col::accent, WHITE, 0.4f), F_MONOBOLD);
+            TextCenter(name, lb, 13, Mix(col::accent, col::heading, 0.4f), F_MONOBOLD);
             if (left) Arrow({lb.x + w, lb.y + 12}, {b.x - 2, lb.y + 12}, col::accent, 2, 8);
             else Arrow({lb.x, lb.y + 12}, {b.x + b.width + 2, lb.y + 12}, col::accent, 2, 8);
             return;
@@ -648,7 +648,7 @@ private:
         Rectangle lb = {x, b.y - 62, w, 24};
         RoundRect(lb, 6, Alpha(col::accent, 0.2f));
         RoundRectLines(lb, 6, 1, col::accent);
-        TextCenter(name, lb, 13, Mix(col::accent, WHITE, 0.4f), F_MONOBOLD);
+        TextCenter(name, lb, 13, Mix(col::accent, col::heading, 0.4f), F_MONOBOLD);
         Arrow({x + w / 2, lb.y + lb.height}, {x + w / 2, b.y - 2}, col::accent, 2, 8);
     }
 

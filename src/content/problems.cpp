@@ -12,6 +12,7 @@
 // the unit tests check), loaded through sources::Text().
 // ============================================================================
 #include "content.h"
+#include "app/theme.h"
 #include <utility>
 
 namespace {
@@ -1260,5 +1261,5 @@ const Problem* ProblemById(const std::string& id) {
 
 const char* DifficultyName(int d) { return d == 0 ? "Easy" : d == 1 ? "Medium" : "Hard"; }
 Color DifficultyColor(int d) {
-    return d == 0 ? Color{52, 211, 153, 255} : d == 1 ? Color{251, 191, 36, 255} : Color{248, 113, 113, 255};
+    return ui::Tone(d == 0 ? Color{52, 211, 153, 255} : d == 1 ? Color{251, 191, 36, 255} : Color{248, 113, 113, 255});
 }

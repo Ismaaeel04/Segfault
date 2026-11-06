@@ -15,9 +15,11 @@ constexpr float H = 800.0f;
 
 // ------------------------------------------------------------ colours -----
 namespace col {
-    extern const Color bg, bg2, panel, panelHi, border, text, dim, faint;
-    extern const Color accent, accent2, warn, danger, success, pointer, heap, stack;
-    extern const Color codeBg, codeLine;
+    // Set by ApplyTheme (theme.h). Read them while drawing, never keep a copy.
+    extern Color bg, bg2, panel, panelHi, border, heading, text, dim, faint;
+    extern Color accent, accent2, warn, danger, success, pointer, heap, stack;
+    extern Color codeBg, codeLine, shadow;
+    extern Color synText, synType, synKey, synNum, synStr, synCom, synFn, synPre, synPunct;
 }
 Color Mix(Color a, Color b, float t);
 Color Alpha(Color c, float a);
@@ -61,6 +63,11 @@ float RichText(Rectangle r, const std::string& text, float size, Color c, bool d
 void RoundRect(Rectangle r, float radius, Color c);
 void RoundRectLines(Rectangle r, float radius, float thick, Color c);
 void Panel(Rectangle r, Color fill = col::panel, float radius = 12);
+void Shadow(Rectangle r, float radius, float strength = 1.0f);
+// Left-to-right gradient. The colours should be opaque.
+void GradientRoundRect(Rectangle r, float radius, Color left, Color right);
+void SoftGlow(Vector2 center, float radius, Color c, float strength);
+void Backdrop(float time);       // the soft background behind every screen
 void Arrow(Vector2 from, Vector2 to, Color c, float thick = 2.0f, float head = 10.0f);
 void CurvedArrow(Vector2 from, Vector2 ctrl, Vector2 to, Color c, float thick = 2.0f, float head = 10.0f);
 void DotGrid(Rectangle r, float gap, Color c);
@@ -82,14 +89,24 @@ void ProgressBar(Rectangle r, float t, Color fill, Color back = col::panelHi);
 // ---------------------------------------------------------- scrolling -----
 struct Scroll {
     float y = 0, target = 0;
-    void Reset() { y = target = 0; }
-    // Handles the wheel while the mouse is over `view`.
+    bool dragging = false;     // the scrollbar thumb is being dragged
+    float grab = 0;            // where on the thumb it was grabbed
+    int lastAuto = -2;         // CodeView: the line it last scrolled to by itself
+    void Reset() { y = target = 0; dragging = false; lastAuto = -2; }
+    // Handles the wheel and the scrollbar. Call it before drawing the content,
+    // so a click on the bar doesn't also click what is underneath it.
     void Update(Rectangle view, float contentHeight);
     void ScrollTo(float value, Rectangle view, float contentHeight);
 };
 void BeginClip(Rectangle r);
 void EndClip();
+// Draws the bar; Scroll::Update makes it work.
 void ScrollBar(Rectangle view, float contentHeight, const Scroll& s);
+// The same bar for widgets that keep their own offsets (the code editor).
+// Returns true while it is using the mouse: the widget should ignore that click.
+bool ScrollBarInput(Rectangle view, float contentHeight, float& y, float& target, bool& dragging, float& grab);
+void DrawScrollBar(Rectangle view, float contentHeight, float y, bool dragging);
+bool OverScrollBar(Rectangle view, float contentHeight);
 
 // --------------------------------------------------------------- code -----
 float CodeLineHeight(float size);

@@ -11,6 +11,7 @@
 #include "rlgl.h"
 #include "app.h"
 #include "runner.h"
+#include "theme.h"
 #include "ui.h"
 #include "content/content.h"
 #include <cmath>
@@ -55,29 +56,37 @@ static std::string FindSolutionsDir(const std::string& res) {
 }
 
 // ---------------------------------------------------------------- top bar ---
+static void ThemeButton(Rectangle r) {
+    if (Button(r, "       Theme", BTN_GHOST, true, 13.5f)) app.themePickerOpen = true;
+    const Color dots[3] = {col::accent, col::accent2, col::pointer};
+    for (int i = 0; i < 3; i++) DrawCircleV({r.x + 13 + i * 6.5f, r.y + r.height / 2}, 4, dots[i]);
+}
+
 static bool TopBar(Scene* scene) {
     DrawRectangleRec({0, 0, W, 64}, col::bg2);
-    DrawRectangleRec({0, 63, W, 1}, Alpha(col::border, 0.9f));
+    DrawRectangleGradientEx({0, 62.5f, W, 1.5f}, col::accent, col::accent, col::accent2, col::accent2);
     bool back = false;
     if (app.current == SceneId::Home || app.current == SceneId::Login) {
-        RoundRect({24, 15, 34, 34}, 9, col::accent);
+        GradientRoundRect({24, 15, 34, 34}, 9, col::accent, Mix(col::accent, col::accent2, 0.7f));
         RoundRect({33, 24, 16, 16}, 3, col::bg2);
         DrawCircleV({41, 32}, 3.5f, col::pointer);
-        Text("Segfault", 70, 13, 22, WHITE, F_DISPLAY);
+        Text("Segfault", 70, 13, 22, col::heading, F_DISPLAY);
         Text("Learn C & C++ by writing it", 71, 40, 13, col::dim, F_MEDIUM);
     } else {
         back = Button({20, 13, 104, 38}, app.hasReturn ? "<  Back" : "<  Home", BTN_GHOST, true, 15);
-        Text(scene->Title(), 142, 19, 21, WHITE, F_HEAVY);
+        Text(scene->Title(), 142, 19, 21, col::heading, F_HEAVY);
     }
-    if (app.current == SceneId::Login) return false;
+    if (app.current == SceneId::Login) { ThemeButton({W - 124, 15, 100, 34}); return false; }
     const Progress& p = app.progress;
     float bx = W - 252;
+    ThemeButton({bx - 112, 15, 100, 34});
     // Only on Home, so nobody logs out by accident in the middle of an exam.
     if (app.current == SceneId::Home && !app.user.empty()) {
-        if (Button({bx - 100, 15, 88, 34}, "Log out", BTN_GHOST, true, 13.5f)) app.signOutRequested = true;
-        TextRight(app.user, bx - 112, 23, 14.5f, col::text, F_BOLD);
+        if (Button({bx - 208, 15, 88, 34}, "Log out", BTN_GHOST, true, 13.5f)) app.signOutRequested = true;
+        TextRight(app.user, bx - 220, 23, 14.5f, col::text, F_BOLD);
     }
     RoundRect({bx, 15, 228, 34}, 17, col::panel);
+    RoundRectLines({bx, 15, 228, 34}, 17, 1, Alpha(col::border, 0.7f));
     Badge(bx + 5, 20, "LV " + std::to_string(p.Level()), col::warn, 12.5f);
     ProgressBar({bx + 70, 29, 92, 6}, p.LevelProgress(), col::accent2);
     TextRight(std::to_string(p.xp) + " XP", bx + 216, 23, 14, col::text, F_BOLD);
@@ -148,16 +157,45 @@ static int SelfTest(bool quick) {
             s.apply(st);
         }
     }
+    // Every theme has to stay readable.
+    auto need = [&](const Theme& t, const char* what, Color fg, Color bg, float min) {
+        float c = ContrastRatio(fg, bg);
+        if (c < min) fail(std::string("theme ") + t.id + ": " + what + " contrast " + std::to_string(c) + " < " + std::to_string(min));
+    };
+    for (int i = 0; i < (int)Themes().size(); i++) {
+        const Theme& t = Themes()[i];
+        ApplyTheme(i);
+        for (Color surface : {t.bg, t.bg2, t.panel, t.panelHi}) {
+            need(t, "heading", t.heading, surface, 4.5f);
+            need(t, "text", t.text, surface, 4.5f);
+            need(t, "dim", t.dim, surface, 4.5f);
+            need(t, "faint", t.faint, surface, 2.5f);
+            for (Color c : {t.warn, t.danger, t.success, t.pointer, t.heap, t.stack, t.accent2})
+                need(t, "status colour", c, surface, 3.0f);
+        }
+        for (Color c : {t.synText, t.synType, t.synKey, t.synNum, t.synStr, t.synFn, t.synPre, t.synPunct})
+            need(t, "syntax", c, t.codeBg, 4.5f);
+        need(t, "comment", t.synCom, t.codeBg, 3.0f);
+        need(t, "primary button", OnColor(t.accent), t.accent, 3.0f);
+        for (int s = 0; s < S_COUNT; s++) need(t, "section colour", SectionColor(s), t.panel, 3.0f);
+        for (int d = 0; d < 3; d++) need(t, "difficulty colour", DifficultyColor(d), t.panel, 3.0f);
+    }
+    ApplyTheme(0);
+    printf("themes: %zu checked\n", Themes().size());
+
     printf("selftest: %zu problems, %zu lessons, %zu questions, %zu programs - %d failure(s)\n",
            Problems().size(), Lessons().size(), Questions().size(), MemPrograms().size(), fails);
     return fails ? 1 : 0;
 }
 
 int main(int argc, char** argv) {
+    ApplyTheme(0);
     if (argc >= 2 && std::strcmp(argv[1], "--selftest") == 0) return SelfTest(argc >= 3 && std::strcmp(argv[2], "quick") == 0);
 
-    // Optional: --shot <scene> <param> <file.png> renders one screen and exits.
+    // Optional: --shot <scene> <param> <file.png> [frames] [theme] renders one screen in
+    // a hidden window (it never takes the focus) and exits.
     const char* shotFile = nullptr;
+    int shotFrame = 50;
     int shotScene = -1;
     std::string shotParam;
     if (argc >= 5 && std::strcmp(argv[1], "--shot") == 0) {
@@ -165,12 +203,14 @@ int main(int argc, char** argv) {
         shotParam = argv[3];
         if (shotParam == "-") shotParam.clear();
         shotFile = argv[4];
+        if (argc >= 6) shotFrame = std::atoi(argv[5]);
     }
 
     unsigned flags = FLAG_WINDOW_RESIZABLE | FLAG_MSAA_4X_HINT | FLAG_VSYNC_HINT;
 #ifdef __APPLE__
     flags |= FLAG_WINDOW_HIGHDPI;     // sharp text on Retina screens
 #endif
+    if (shotFile) flags |= FLAG_WINDOW_HIDDEN;
     SetConfigFlags(flags);
     SetTraceLogLevel(LOG_WARNING);
     InitWindow((int)W, (int)H, "Segfault - Learn C & C++");
@@ -202,6 +242,8 @@ int main(int argc, char** argv) {
     sources::Load(FindSolutionsDir(app.resourceDir));
     runner::StartDetection(app.resourceDir);
     app.dataDir = GetApplicationDirectory();
+    LoadLastTheme();
+    if (shotFile && argc >= 7) ApplyTheme(ThemeIndex(argv[6]));
     CreateScenes();
 
     if (shotFile) app.Go((SceneId)shotScene, shotParam);
@@ -209,6 +251,7 @@ int main(int argc, char** argv) {
 
     RenderTexture2D canvas = {};
     float currentScale = -1;
+    float fade = 1;                       // scene switches fade in
     int frame = 0;
 
     while (!WindowShouldClose()) {
@@ -247,6 +290,7 @@ int main(int argc, char** argv) {
             ClearTextFocus();
             SetInputEnabled(true);
             gScenes[(int)app.current]->Enter(app.pendingParam);
+            fade = 1;
         }
         Scene* scene = gScenes[(int)app.current].get();
         float dt = std::fmin(GetFrameTime(), 0.05f);
@@ -258,10 +302,18 @@ int main(int argc, char** argv) {
         cam.zoom = scale;
         BeginMode2D(cam);
         ui::BeginFrame();
+        Backdrop((float)GetTime());
+        const bool pickerWasOpen = app.themePickerOpen;
+        if (pickerWasOpen) SetInputEnabled(false);
         scene->Frame(dt);
-        SetInputEnabled(true);
+        if (fade > 0) {
+            DrawRectangleRec({0, 64, W, H - 64}, Alpha(col::bg, fade));
+            fade = std::fmax(0.0f, fade - dt * 7.0f);
+        }
+        SetInputEnabled(!pickerWasOpen);
         bool back = TopBar(scene);
-        if ((back || (IsKeyPressed(KEY_ESCAPE) && !AnyTextFocused())) && app.current != SceneId::Home && app.current != SceneId::Login) {
+        if (pickerWasOpen) ThemePicker();
+        if ((back || (IsKeyPressed(KEY_ESCAPE) && !AnyTextFocused() && !pickerWasOpen)) && app.current != SceneId::Home && app.current != SceneId::Login) {
             if (app.hasReturn) {
                 SceneId to = app.returnScene;
                 std::string param = app.returnParam;
@@ -286,7 +338,7 @@ int main(int argc, char** argv) {
         SetMouseCursor(WantsIBeam() ? MOUSE_CURSOR_IBEAM : WantsHandCursor() ? MOUSE_CURSOR_POINTING_HAND : MOUSE_CURSOR_DEFAULT);
 
         frame++;
-        if (shotFile && frame == 50) {
+        if (shotFile && frame == shotFrame) {
             Image img = LoadImageFromTexture(canvas.texture);
             ImageFlipVertical(&img);
             ImageFormat(&img, PIXELFORMAT_UNCOMPRESSED_R8G8B8);

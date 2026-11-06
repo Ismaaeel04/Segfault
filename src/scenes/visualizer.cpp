@@ -131,10 +131,11 @@ private:
                 Load((int)i);
         }
         EndClip();
+        ScrollBar(view, contentH, listScroll);
         // predict toggle
         Rectangle tg = {r.x + 14, r.y + r.height - 70, r.width - 28, 56};
         RoundRect(tg, 10, col::panelHi);
-        Text("Predict mode", tg.x + 14, tg.y + 10, 15, WHITE, F_BOLD);
+        Text("Predict mode", tg.x + 14, tg.y + 10, 15, col::heading, F_BOLD);
         Text("answer before each line runs", tg.x + 14, tg.y + 31, 11.5f, col::dim);
         Rectangle sw = {tg.x + tg.width - 52, tg.y + 17, 40, 22};
         RoundRect(sw, 11, predictMode ? col::accent : col::border);
@@ -150,7 +151,7 @@ private:
         int nextLine = cur + 1 < (int)steps.size() ? steps[cur + 1].line : -1;
         std::vector<Color> tint(P().code.size(), Color{0, 0, 0, 0});
         if (nextLine >= 0) tint[nextLine] = Alpha(col::warn, 0.10f);
-        Text(P().title, r.x + 2, r.y, 20, WHITE, F_DISPLAY);
+        Text(P().title, r.x + 2, r.y, 20, col::heading, F_DISPLAY);
         Text(P().blurb, r.x + 2, r.y + 28, 13, col::dim);
         CodeView({r.x, r.y + 54, r.width, r.height - 54}, P().code, codeScroll, line, 15.5f, &tint, true);
         // legend
@@ -171,7 +172,7 @@ private:
         if (asking) {
             const MemStep& s = steps[cur + 1];
             Text("PREDICT", x, r.y + 16, 12, col::warn, F_BOLD);
-            float h = RichText({x, r.y + 36, w, 0}, s.ask, 16, WHITE);
+            float h = RichText({x, r.y + 36, w, 0}, s.ask, 16, col::heading);
             float y = r.y + 44 + h;
             for (size_t k = 0; k < order.size(); k++) {
                 Rectangle b = {x, y, w, 34};
@@ -344,7 +345,7 @@ private:
         Text(std::to_string(c.addr), b.x + 8, b.y + 3, 10.5f, Alpha(col::dim, a), F_MONO);
         std::string label = c.name.empty() ? c.type : c.name;
         if (c.region == Region::Stack) label = c.name;
-        Text(Ellipsize(label, 14, F_MONOBOLD, c.region == Region::Heap ? 74 : 86), b.x + 8, b.y + 18, 14, Alpha(WHITE, a), F_MONOBOLD);
+        Text(Ellipsize(label, 14, F_MONOBOLD, c.region == Region::Heap ? 74 : 86), b.x + 8, b.y + 18, 14, Alpha(col::heading, a), F_MONOBOLD);
         if (c.region == Region::Stack) Text(c.type, b.x + 98, b.y + 21, 11, Alpha(isPtr ? col::pointer : col::dim, a), F_MONO);
         // value box
         Rectangle v = pl.valueBox;
