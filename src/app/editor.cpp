@@ -1,4 +1,5 @@
 #include "editor.h"
+#include "brackets.h"
 #include "ui.h"
 #include <algorithm>
 #include <cmath>
@@ -356,6 +357,10 @@ void CodeEditor::HandleKeys(bool readOnly, float viewH) {
         lines.insert(lines.begin() + cy + 1, lines[cy]);
         cy++;
     }
+    if (ctrl && IsKeyPressed(KEY_M)) {   // jump to matching bracket
+        BracketMatch bm = FindMatchingBracket(lines, cy, cx);
+        if (bm.active && bm.matched) MoveTo(bm.y2, bm.x2, shift);
+    }
 
     // ---- editing --------------------------------------------------------------
     if (IsKeyPressed(KEY_TAB)) {
@@ -485,6 +490,21 @@ void CodeEditor::Frame(Rectangle r, int id, bool readOnly) {
         if (err) DrawCircleV({r.x + 12, y + lineH / 2}, 4, col::danger);
     }
     BeginClip(text.width > 0 ? Rectangle{text.x - 4, r.y + 1, text.width + 12, r.height - 2} : text);
+    if (focused) {
+        BracketMatch bm = FindMatchingBracket(lines, cy, cx);
+        if (bm.active) {
+            Color bc = bm.matched ? col::accent2 : col::danger;
+            auto drawBox = [&](int by, int bx) {
+                if (by < first || by > last) return;
+                float y = text.y + by * lineH - scrollY;
+                Rectangle br = {text.x + bx * charW - scrollX - 1, y + 2, charW + 2, lineH - 4};
+                RoundRect(br, 4, Alpha(bc, 0.22f));
+                RoundRectLines(br, 4, 1.2f, Alpha(bc, 0.85f));
+            };
+            drawBox(bm.y1, bm.x1);
+            if (bm.matched) drawBox(bm.y2, bm.x2);
+        }
+    }
     for (int i = first; i <= last; i++) {
         float y = text.y + i * lineH - scrollY;
         CodeLine(text.x - scrollX, y + (lineH - fs) / 2, lines[i], fs);

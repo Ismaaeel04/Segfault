@@ -1,8 +1,8 @@
 // ============================================================================
 // editor.h  -  A small code editor widget (raylib, immediate mode).
 // Syntax highlighting, line numbers, selection, clipboard, undo/redo,
-// auto-indent, auto-closing brackets/quotes, Tab / Shift+Tab, Ctrl+/ comments,
-// error markers.
+// auto-indent, auto-closing brackets/quotes, matching-bracket highlight,
+// Tab / Shift+Tab, Ctrl+/ comments, error markers.
 // ============================================================================
 #pragma once
 #include "raylib.h"
