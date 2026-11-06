@@ -100,8 +100,9 @@ third_party/     TinyCC for Windows (LGPL, see COPYING.txt)
 resources/fonts  Inter + JetBrains Mono (SIL OFL)
 ```
 
-Text is rendered at exactly the font's pixel size for the current window scale, and the
-Windows/macOS builds are DPI-aware, so text stays sharp on any screen.
+The UI is anti-aliased by supersampling: it is drawn into a canvas 4x larger than the window
+(2x on very large windows) and shrunk with mipmaps, so text and rounded corners are smooth.
+The Windows/macOS builds are DPI-aware, so text stays sharp on any screen.
 
 ## Credits
 raylib (zlib), TinyCC (LGPL 2.1), Inter and JetBrains Mono (SIL OFL 1.1).
