@@ -171,7 +171,7 @@ private:
              col::accent, std::to_string(lessonsDone) + " / " + std::to_string(ls.size()) + " lessons completed",
              ls.empty() ? 0 : (float)lessonsDone / ls.size(),
              nextLesson.empty() ? "Review the lessons" : "Continue: " + nextLessonTitle, 0},
-            {"02  PRACTICE", "Practice", "Problems like LeetCode: write the function in the editor, run it, and pass every test - hidden edge cases included.",
+            {"02  PRACTICE", "Practice", "Write the function in the editor, run it, and pass every test - hidden edge cases included.",
              col::success, std::to_string(solved) + " / " + std::to_string(ps.size()) + " problems solved",
              ps.empty() ? 0 : (float)solved / ps.size(),
              nextProblem.empty() ? "All solved - browse problems" : "Next: " + nextProblemTitle, 1},

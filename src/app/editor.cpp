@@ -283,6 +283,21 @@ void CodeEditor::HandleKeys(bool readOnly, float viewH) {
     bool shift = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
     auto pressed = [](int k) { return IsKeyPressed(k) || IsKeyPressedRepeat(k); };
     int pageLines = std::max(1, (int)(viewH / (fontSize * 1.6f)) - 2);
+    const int startY = cy, startX = cx;
+
+    // ---- autocompletion popup: it gets the arrows, Tab, Enter and Esc ------
+    const bool popup = compOpen && !comp.empty() && !readOnly;
+    bool accepted = false;
+    if (popup) {
+        int n = (int)comp.size();
+        if (pressed(KEY_DOWN)) compSel = (compSel + 1) % n;
+        if (pressed(KEY_UP)) compSel = (compSel + n - 1) % n;
+        if (IsKeyPressed(KEY_ESCAPE)) compOpen = false;
+        if ((IsKeyPressed(KEY_TAB) && !shift) || ((IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_KP_ENTER)) && !ctrl)) {
+            AcceptCompletion(compSel);
+            accepted = true;
+        }
+    }
 
     // ---- navigation -------------------------------------------------------
     if (pressed(KEY_LEFT)) {
@@ -317,8 +332,8 @@ void CodeEditor::HandleKeys(bool readOnly, float viewH) {
         if (dy > 0 && cy == (int)lines.size() - 1) nx = (int)lines[ny].size();
         MoveTo(ny, nx, shift);
     };
-    if (pressed(KEY_UP)) vertical(-1);
-    if (pressed(KEY_DOWN)) vertical(1);
+    if (pressed(KEY_UP) && !popup) vertical(-1);
+    if (pressed(KEY_DOWN) && !popup) vertical(1);
     if (pressed(KEY_PAGE_UP)) vertical(-pageLines);
     if (pressed(KEY_PAGE_DOWN)) vertical(pageLines);
     if (pressed(KEY_HOME)) {
@@ -363,21 +378,93 @@ void CodeEditor::HandleKeys(bool readOnly, float viewH) {
     }
 
     // ---- editing --------------------------------------------------------------
-    if (IsKeyPressed(KEY_TAB)) {
+    if (IsKeyPressed(KEY_TAB) && !accepted) {
         int y0, x0, y1, x1;
         if (shift) IndentLines(true);
         else if (SelRange(y0, x0, y1, x1) && y0 != y1) IndentLines(false);
         else { PushUndo(1); DeleteSelection(); int n = 4 - cx % 4; lines[cy].insert(cx, std::string(n, ' ')); cx += n; }
     }
-    if ((pressed(KEY_ENTER) || pressed(KEY_KP_ENTER)) && !ctrl) Newline();   // Ctrl+Enter = run
-    if (pressed(KEY_BACKSPACE)) Backspace();
+    if ((pressed(KEY_ENTER) || pressed(KEY_KP_ENTER)) && !ctrl && !accepted) Newline();   // Ctrl+Enter = run
+    bool erased = pressed(KEY_BACKSPACE);
+    if (erased) Backspace();
     if (pressed(KEY_DELETE)) DeleteForward();
+    bool typedWord = false, typedOther = false;
     int ch = GetCharPressed();
     while (ch > 0) {
-        if (ch >= 32 && ch < 127 && !ctrl) InsertChar((char)ch);
+        if (ch >= 32 && ch < 127 && !ctrl) {
+            InsertChar((char)ch);
+            if (IsWordChar((char)ch)) typedWord = true; else typedOther = true;
+        }
         ch = GetCharPressed();
     }
     Clamp();
+
+    // The popup follows the word being typed; anything else closes it.
+    bool force = ctrl && IsKeyPressed(KEY_SPACE);
+    if (force || typedWord || (compOpen && (erased || typedOther))) UpdateCompletion(force);
+    else if (accepted || cy != startY || cx != startX) compOpen = false;
+}
+
+void CodeEditor::UpdateCompletion(bool force) {
+    comp = complete::Suggest(lines, cy, cx, 8, force);
+    compStart = complete::WordStart(lines[cy], cx);
+    compOpen = !comp.empty();
+    compSel = 0;
+}
+
+void CodeEditor::AcceptCompletion(int index) {
+    if (index < 0 || index >= (int)comp.size()) return;
+    const std::string& word = comp[index].word;
+    PushUndo(0);
+    DeleteSelection();
+    std::string& l = lines[cy];
+    int start = std::clamp(compStart, 0, cx);
+    l.replace(start, cx - start, word);
+    cx = start + (int)word.size();
+    hasSel = false;
+    compOpen = false;
+}
+
+void CodeEditor::DrawCompletion(Rectangle r, Rectangle text, float lineH, float charW) {
+    const float rowH = compRowH, size = 14.5f, pad = 4;
+    const int n = (int)comp.size();
+    const std::string prefix = lines[cy].substr(compStart, cx - compStart);
+    float wordW = 0;
+    for (const complete::Item& it : comp) wordW = std::max(wordW, Measure(it.word, size, F_MONO).x);
+    float w = std::clamp(wordW + 126, 220.0f, 380.0f), h = n * rowH + pad * 2;
+    float x = text.x + compStart * charW - scrollX - 30;
+    float below = text.y + (cy + 1) * lineH - scrollY + 2;
+    float y = below + h <= r.y + r.height - 4 ? below : text.y + cy * lineH - scrollY - h - 2;   // above if no room
+    x = std::clamp(x, r.x + 4, r.x + r.width - w - 4);
+    y = std::clamp(y, r.y + 4, r.y + r.height - h - 4);
+    compRect = {x, y, w, h};
+
+    Shadow(compRect, 10, 1.4f);
+    RoundRect(compRect, 10, col::panel);
+    RoundRectLines(compRect, 10, 1, col::border);
+    Vector2 m = Mouse();
+    for (int i = 0; i < n; i++) {
+        const complete::Item& it = comp[i];
+        Rectangle row = {x + pad, y + pad + i * rowH, w - pad * 2, rowH};
+        bool hot = InputEnabled() && CheckCollisionPointRec(m, row);
+        if (i == compSel) RoundRect(row, 7, Alpha(col::accent, 0.2f));
+        else if (hot) RoundRect(row, 7, Alpha(col::panelHi, 0.8f));
+        // kind badge, like the letters in VS Code / HackerRank
+        Color kc = it.kind == complete::KEYWORD ? col::accent : it.kind == complete::TYPE ? col::stack
+                 : it.kind == complete::FUNCTION ? col::warn : it.kind == complete::VARIABLE ? col::accent2 : col::pointer;
+        const char* letter = it.kind == complete::KEYWORD ? "k" : it.kind == complete::TYPE ? "t"
+                           : it.kind == complete::VARIABLE ? "v" : "f";
+        Rectangle badge = {row.x + 6, row.y + 4, 18, 18};
+        RoundRect(badge, 5, Alpha(kc, 0.2f));
+        TextCenter(letter, badge, 12, kc, F_MONOBOLD);
+        // the typed part in bold, the rest normal
+        float tx = row.x + 32, ty = row.y + (rowH - size) / 2;
+        size_t typed = std::min(prefix.size(), it.word.size());
+        ui::Text(it.word.substr(0, typed), tx, ty, size, col::heading, F_MONOBOLD);
+        ui::Text(it.word.substr(typed), tx + Measure(it.word.substr(0, typed), size, F_MONOBOLD).x, ty, size, col::text, F_MONO);
+        TextRight(i == compSel ? "Tab" : complete::KindName(it.kind), row.x + row.width - 10, ty + 1, 12,
+                  i == compSel ? col::accent : col::faint, i == compSel ? F_BOLD : F_MEDIUM);
+    }
 }
 
 void CodeEditor::EnsureVisible(Rectangle text, float lineH, float charW) {
@@ -401,7 +488,7 @@ void CodeEditor::Frame(Rectangle r, int id, bool readOnly) {
     bool hover = InputEnabled() && MouseIn(r);
     const float contentH = lines.size() * lineH + lineH * 2;
     const Rectangle barView = {r.x, text.y, r.width - 1, text.height};
-    if (hover && !OverScrollBar(barView, contentH)) WantIBeam();
+    if (hover && !OverScrollBar(barView, contentH) && !(compOpen && CheckCollisionPointRec(Mouse(), compRect))) WantIBeam();
 
     // ---- scrollbar: comes first, so its clicks don't move the cursor ---------
     const bool onBar = ScrollBarInput(barView, contentH, scrollY, targetY, barDragging, barGrab);
@@ -414,7 +501,17 @@ void CodeEditor::Frame(Rectangle r, int id, bool readOnly) {
         x = (int)std::round((m.x - text.x + scrollX) / charW);
         x = std::clamp(x, 0, (int)lines[y].size());
     };
-    if (!onBar && InputEnabled() && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+    const bool onPopup = focused && compOpen && !comp.empty() && !readOnly && InputEnabled() &&
+                         CheckCollisionPointRec(Mouse(), compRect);
+    if (onPopup) {
+        WantHand();
+        if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+            AcceptCompletion((int)((Mouse().y - compRect.y - 4) / compRowH));
+            blink = 0;
+        }
+    }
+    if (!onBar && !onPopup && InputEnabled() && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+        compOpen = false;
         if (!hover && focused) { ClearTextFocus(); focused = false; }
         if (hover) {
             FocusWidget(id);
@@ -518,4 +615,6 @@ void CodeEditor::Frame(Rectangle r, int id, bool readOnly) {
     // gutter separator + scrollbar
     DrawRectangleRec({r.x + gutterW, r.y + 8, 1, r.height - 16}, Alpha(col::border, 0.5f));
     DrawScrollBar(barView, contentH, scrollY, barDragging);
+    if (!focused) compOpen = false;
+    if (compOpen && !comp.empty() && !readOnly) DrawCompletion(r, text, lineH, charW);
 }

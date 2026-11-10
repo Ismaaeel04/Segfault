@@ -2,10 +2,11 @@
 // editor.h  -  A small code editor widget (raylib, immediate mode).
 // Syntax highlighting, line numbers, selection, clipboard, undo/redo,
 // auto-indent, auto-closing brackets/quotes, matching-bracket highlight,
-// Tab / Shift+Tab, Ctrl+/ comments, error markers.
+// autocompletion (complete.h), Tab / Shift+Tab, Ctrl+/ comments, error markers.
 // ============================================================================
 #pragma once
 #include "raylib.h"
+#include "complete.h"
 #include <string>
 #include <vector>
 
@@ -38,6 +39,12 @@ private:
     bool changed = false;
     std::vector<int> errorLines;
     int preferredX = -1;
+    // autocompletion popup
+    bool compOpen = false;
+    std::vector<complete::Item> comp;
+    int compSel = 0, compStart = 0;
+    Rectangle compRect = {0, 0, 0, 0};   // where it was drawn, for mouse clicks
+    float compRowH = 26;
 
     void PushUndo(int kind);
     void Restore(Snapshot& s);
@@ -54,5 +61,8 @@ private:
     void ToggleComment();
     void Clamp();
     void HandleKeys(bool readOnly, float viewH);
+    void UpdateCompletion(bool force);
+    void AcceptCompletion(int index);
+    void DrawCompletion(Rectangle r, Rectangle text, float lineH, float charW);
     void EnsureVisible(Rectangle text, float lineH, float charW);
 };

@@ -9,7 +9,7 @@ The exams are about **writing code**, so the app is too. It has three main parts
 | | What you do |
 |---|---|
 | **Study** | 24 lessons in 9 sections. Each one explains an idea and has **step-through code walkthroughs**, tables, tips, common mistakes, quick checks, links to interactive demos (memory visualizer, linked list lab, grid) and the practice problems for that topic. |
-| **Practice** | 50 problems, LeetCode style. Write the function in the built-in code editor, **Run** it against the example cases, then **Submit** to run every test, hidden edge cases included. Hints and the reference solution are available, and your code is saved automatically. |
+| **Practice** | 50 problems, LeetCode style. Write the function in the built-in code editor, **Run** it against the example cases, then **Submit** to run every test, hidden edge cases included. Hints and the reference solution are available, and your code is saved automatically. The editor autocompletes as you type, like HackerRank: keywords, types, library functions and the names in your own code (Tab or Enter to accept, Ctrl+Space to ask for suggestions). |
 | **Mock Exam** | A timed exam (Paper 1: C fundamentals, Paper 2: pointers & lists, or a quick 25-minute mock). You can run the example tests while you work. When you submit, hidden tests mark every problem and you get a score and a review against the reference solutions. |
 | **Quick Quiz** | 68 multiple-choice questions for quick revision, with explanations and a list of mistakes to review. |
 
@@ -106,6 +106,7 @@ raylib is downloaded automatically the first time.
                                   # register, login, bad input, what ends up on disk
 ./build/scrollbar_tests           # scrollbar geometry: thumb position and dragging
 ./build/paste_tests               # what a text box keeps from pasted text
+./build/complete_tests            # editor autocompletion: what is suggested, and in what order
 ./build/avatar_tests              # profile pictures: crop, round mask, paths with non-ASCII letters
 SEGFAULT_BENCH=1920x1080 ./build/Segfault --shot 0 - out.png 330   # frame times (add
                                   # SEGFAULT_BENCH_TOUR=1 to visit every screen)

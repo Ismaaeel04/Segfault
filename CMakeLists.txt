@@ -108,3 +108,6 @@ add_test(NAME avatar COMMAND avatar_tests)
 
 add_executable(bracket_tests tests/test_brackets.cpp)
 add_test(NAME brackets COMMAND bracket_tests)
+
+add_executable(complete_tests tests/test_complete.cpp)
+add_test(NAME complete COMMAND complete_tests)

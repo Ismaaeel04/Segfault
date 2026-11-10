@@ -1,6 +1,7 @@
 #include "workspace.h"
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 
 using namespace ui;
 
@@ -114,76 +115,140 @@ void Workspace::Frame(Rectangle area) {
 // ------------------------------------------------------------- description --
 float Workspace::DescContent(Rectangle r, bool draw) {
     const Problem& p = *problem;
-    float x = r.x, w = r.width, y = r.y;
-    auto txt = [&](const std::string& s, float size, Color c, FontKind k) {
-        if (draw) Text(s, x, y, size, c, k);
-    };
-    // title + badges
-    for (const std::string& line : Wrap(p.title, 25, F_HEAVY, w)) { txt(line, 25, col::heading, F_HEAVY); y += 32; }
+    const float x = r.x, w = r.width;
+    float y = r.y;
+
+    // ---- title, numbered like on LeetCode (not in the exam: there it is "Problem 1, 2...")
+    std::string title = p.title;
+    if (!examMode) {
+        const auto& all = Problems();
+        for (size_t i = 0; i < all.size(); i++) if (all[i].id == p.id) title = std::to_string(i + 1) + ". " + p.title;
+    }
+    for (const std::string& line : Wrap(title, 25, F_HEAVY, w)) { if (draw) Text(line, x, y, 25, col::heading, F_HEAVY); y += 32; }
     y += 6;
-    float bx = x;
     if (draw) {
+        float bx = x;
         bx += Badge(bx, y, DifficultyName(p.difficulty), DifficultyColor(p.difficulty), 13) + 8;
         bx += Badge(bx, y, SectionName(p.section), SectionColor(p.section), 13) + 8;
+        if (p.cppOnly) bx += Badge(bx, y, "C++", col::accent, 13) + 8;
         if (!examMode && app.progress.Has("solved:" + p.id)) Badge(bx, y, "Solved", col::success, 13);
-        else if (p.cppOnly) Badge(bx, y, "C++", col::accent, 13);
     }
-    y += 40;
-    y += RichText({x, y, w, 0}, p.statement, 16.5f, col::text, draw) + 14;
+    y += 36;
+    if (draw) DrawRectangleRec({x, y, w, 1}, col::border);
+    y += 16;
 
+    // ---- the statement
+    y += RichText({x, y, w, 0}, p.statement, 16, col::text, draw) + 18;
+
+    const float pad = 14, lh = 22, mono = 14;
+    const float cw = CodeCharWidth(mono);
+    auto heading = [&](const std::string& s) {
+        if (draw) Text(s, x, y, 15.5f, col::heading, F_BOLD);
+        y += 28;
+    };
+    // a card with a coloured bar on the left
+    auto card = [&](float h, Color bar) {
+        if (!draw) return;
+        RoundRect({x, y, w, h}, 10, Mix(col::panel, col::codeBg, 0.6f));
+        RoundRectLines({x, y, w, h}, 10, 1, Alpha(col::border, 0.8f));
+        RoundRect({x, y + 8, 3, h - 16}, 1.5f, bar);
+    };
+
+    // ---- the functions the student writes, as on HackerRank: the function
+    // header just above each "// Write your code here" in the starter code
+    std::vector<std::string> signatures;
+    {
+        std::vector<std::string> sl = SplitLines(p.starter);
+        auto header = [](const std::string& line, std::string& out) {
+            size_t f = line.find_first_not_of(' ');
+            if (f == std::string::npos || line.find('(') == std::string::npos) return false;
+            std::string t = line.substr(f);
+            for (const char* kw : {"if", "for", "while", "switch", "return", "//", "#"})
+                if (t.compare(0, std::strlen(kw), kw) == 0) return false;
+            size_t brace = t.find('{');
+            if (brace == std::string::npos) return false;
+            t = t.substr(0, brace);
+            while (!t.empty() && t.back() == ' ') t.pop_back();
+            out = t;
+            return true;
+        };
+        for (int m = 0; m < (int)sl.size(); m++) {
+            if (sl[m].find("Write your code here") == std::string::npos) continue;
+            std::string sig;
+            for (int i = m; i >= 0 && sig.empty(); i--) header(sl[i], sig);
+            if (!sig.empty() && std::find(signatures.begin(), signatures.end(), sig) == signatures.end()) signatures.push_back(sig);
+        }
+        std::string first;
+        if (signatures.empty()) for (const std::string& l : sl) if (header(l, first)) { signatures.push_back(first); break; }
+    }
+    if (!signatures.empty()) {
+        heading(signatures.size() > 1 ? "Complete the functions" : "Complete the function");
+        int per = std::max(10, (int)((w - pad * 2 - 6) / cw));
+        std::vector<std::string> parts;
+        for (const std::string& signature : signatures)
+            for (std::string rest = signature; !rest.empty(); rest = (int)rest.size() > per ? rest.substr(per) : "")
+                parts.push_back(rest.substr(0, per));
+        float h = pad * 2 + parts.size() * lh - 6;
+        card(h, col::accent);
+        float yy = y + pad - 2;
+        for (const std::string& part : parts) { if (draw) CodeLine(x + pad + 4, yy, part, mono); yy += lh; }
+        y += h + 22;
+    }
+
+    // ---- examples, LeetCode style: "Input: ..." on one line
     for (size_t i = 0; i < p.examples.size(); i++) {
         const Example& e = p.examples[i];
-        txt("Example " + std::to_string(i + 1), 15, col::heading, F_BOLD);
-        y += 26;
-        // body
-        float lh = 21, pad = 14;
-        std::vector<std::pair<std::string, std::string>> rows = {{"Input", e.input}, {"Output", e.output}};
-        if (!e.explain.empty()) rows.push_back({"Explanation", e.explain});
-        float cw = CodeCharWidth(14);
-        int perLine = std::max(10, (int)((w - pad * 2 - 4) / cw));
-        float h = pad;
-        std::vector<std::vector<std::string>> wrapped;
-        for (auto& row : rows) {
-            std::vector<std::string> lines;
-            if (row.first == "Explanation") lines = Wrap(row.second, 14.5f, F_UI, w - pad * 2);
-            else {
-                std::string s = row.second;
-                for (const std::string& part : SplitLines(s)) {
-                    std::string rest = part;
-                    while ((int)rest.size() > perLine) { lines.push_back(rest.substr(0, perLine)); rest = rest.substr(perLine); }
-                    lines.push_back(rest);
-                }
+        heading("Example " + std::to_string(i + 1) + ":");
+        struct Row { const char* label; std::string value; bool code; };
+        std::vector<Row> rows = {{"Input:", e.input, true}, {"Output:", e.output, true}};
+        if (!e.explain.empty()) rows.push_back({"Explanation:", e.explain, false});
+        // lay out first (for the height), then draw
+        struct Laid { float labelW; std::vector<std::string> lines; };
+        std::vector<Laid> laid;
+        float h = pad * 2 - 6;
+        for (const Row& row : rows) {
+            Laid l;
+            l.labelW = Measure(row.label, 14, F_BOLD).x + 8;
+            float room = w - pad * 2 - 6 - l.labelW;
+            if (row.code) {
+                int per = std::max(8, (int)(room / cw));
+                for (const std::string& part : SplitLines(row.value))
+                    for (std::string rest = part;;) {
+                        l.lines.push_back(rest.substr(0, per));
+                        if ((int)rest.size() <= per) break;
+                        rest = rest.substr(per);
+                    }
+            } else {
+                l.lines = Wrap(row.value, 14.5f, F_UI, room);
             }
-            wrapped.push_back(lines);
-            h += 20 + lines.size() * lh + 6;
+            if (l.lines.empty()) l.lines.push_back("");
+            h += l.lines.size() * lh + 4;
+            laid.push_back(l);
         }
-        h += pad - 6;
-        if (draw) {
-            RoundRect({x, y, w, h}, 10, col::bg2);
-            DrawRectangleRec({x, y + 10, 3, h - 20}, Alpha(col::border, 1));
-        }
-        float yy = y + pad;
+        card(h, Alpha(col::accent2, 0.8f));
+        float yy = y + pad - 2;
         for (size_t k = 0; k < rows.size(); k++) {
-            if (draw) Text(rows[k].first, x + pad, yy, 13, col::dim, F_BOLD);
-            yy += 20;
-            for (auto& l : wrapped[k]) {
+            float vx = x + pad + 4 + laid[k].labelW;
+            if (draw) Text(rows[k].label, x + pad + 4, yy + 1, 14, col::heading, F_BOLD);
+            for (const std::string& l : laid[k].lines) {
                 if (draw) {
-                    if (rows[k].first == "Explanation") Text(l, x + pad, yy, 14.5f, col::dim, F_UI);
-                    else Text(l, x + pad, yy, 14, col::text, F_MONO);
+                    if (rows[k].code) Text(l, vx, yy + 1, mono, col::text, F_MONO);
+                    else Text(l, vx, yy, 14.5f, col::dim, F_UI);
                 }
                 yy += lh;
             }
-            yy += 6;
+            yy += 4;
         }
-        y += h + 16;
+        y += h + 20;
     }
+
+    // ---- constraints
     if (!p.constraints.empty()) {
-        txt("Constraints", 15, col::heading, F_BOLD);
-        y += 26;
+        heading("Constraints:");
         for (const std::string& c : SplitLines(p.constraints)) {
             if (c.empty()) continue;
-            if (draw) DrawCircleV({x + 5, y + 9}, 2.5f, col::dim);
-            y += RichText({x + 16, y, w - 16, 0}, "`" + c + "`", 15, col::dim, draw) + 2;
+            if (draw) DrawCircleV({x + 6, y + 11}, 3, Alpha(col::accent, 0.8f));
+            y += RichText({x + 18, y, w - 18, 0}, "`" + c + "`", 15, col::dim, draw) + 6;
         }
         y += 10;
     }
@@ -191,7 +256,7 @@ float Workspace::DescContent(Rectangle r, bool draw) {
         float h = RichText({0, 0, w - 36, 0}, p.ruleText, 15, col::text, false) + 46;
         if (draw) {
             RoundRect({x, y, w, h}, 10, Alpha(col::warn, 0.10f));
-            DrawRectangleRec({x, y + 8, 3, h - 16}, col::warn);
+            RoundRect({x, y + 8, 3, h - 16}, 1.5f, col::warn);
             Text("EXAM RULE", x + 18, y + 13, 12.5f, col::warn, F_BOLD);
             RichText({x + 18, y + 34, w - 36, 0}, p.ruleText, 15, col::text);
         }

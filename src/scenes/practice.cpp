@@ -54,7 +54,7 @@ private:
         }
         // header
         Text("Practice", 32, 86, 30, col::heading, F_DISPLAY);
-        Text("Write real C / C++ code and run it against tests - like LeetCode, built from your exam material.", 34, 126, 15.5f, col::dim, F_MEDIUM);
+        Text("Write real C / C++ code and run it against tests.", 34, 126, 15.5f, col::dim, F_MEDIUM);
 
         // stats card
         Rectangle st = {876, 80, 380, 98};
