@@ -26,12 +26,6 @@ using namespace ui;
 
 static std::unique_ptr<Scene> gScenes[(int)SceneId::Count];
 
-// Anti-aliasing by supersampling: the UI is drawn into a canvas SSAA times
-// larger than the window, then shrunk with mipmaps (= an SSAA x SSAA box
-// filter). MSAA cannot be used because it does not apply to render textures.
-// 4x gives 16 coverage levels per pixel; drops to 2x on very large windows.
-static int SSAA = 4;
-
 static void CreateScenes() {
     gScenes[(int)SceneId::Home].reset(CreateHomeScene());
     gScenes[(int)SceneId::Study].reset(CreateStudyScene());
@@ -212,7 +206,10 @@ int main(int argc, char** argv) {
         if (argc >= 6) shotFrame = std::atoi(argv[5]);
     }
 
-    unsigned flags = FLAG_WINDOW_RESIZABLE | FLAG_MSAA_4X_HINT | FLAG_VSYNC_HINT;
+    // SEGFAULT_BENCH=<width>x<height> with --shot: draws as fast as it can at
+    // that window size and prints the average time per frame.
+    const char* bench = shotFile ? std::getenv("SEGFAULT_BENCH") : nullptr;
+    unsigned flags = FLAG_WINDOW_RESIZABLE | FLAG_MSAA_4X_HINT | (bench ? 0 : FLAG_VSYNC_HINT);
 #ifdef __APPLE__
     flags |= FLAG_WINDOW_HIGHDPI;     // sharp text on Retina screens
 #endif
@@ -221,8 +218,15 @@ int main(int argc, char** argv) {
     SetTraceLogLevel(LOG_WARNING);
     InitWindow((int)W, (int)H, "Segfault - Learn C & C++");
     SetExitKey(KEY_NULL);
-    SetTargetFPS(60);
+    SetTargetFPS(bench ? 0 : 60);
     SetWindowMinSize(800, 500);
+    double benchStart = 0, benchLast = 0, benchWorst = 0;
+    int benchSlow = 0;
+    const bool benchTour = bench && std::getenv("SEGFAULT_BENCH_TOUR");
+    if (bench) {
+        int bw = 0, bh = 0;
+        if (std::sscanf(bench, "%dx%d", &bw, &bh) == 2 && bw > 0 && bh > 0) SetWindowSize(bw, bh);
+    }
     if (!shotFile) {
         // Size the window for the screen's DPI so text is big and sharp
         // (on a 150% Windows laptop the canvas is drawn at 1.5x, not stretched).
@@ -269,14 +273,13 @@ int main(int argc, char** argv) {
         if (scale <= 0) scale = 1;
         if (std::fabs(scale - currentScale) > 0.001f) {
             if (canvas.id) UnloadRenderTexture(canvas);
-            int outW = (int)std::lround(W * scale), outH = (int)std::lround(H * scale);
-            SSAA = outW * 4 <= 8192 ? 4 : 2;
-            canvas = LoadRenderTexture(outW * SSAA, outH * SSAA);
-            ui::SetScale(scale * SSAA);
+            canvas = LoadRenderTexture((int)std::lround(W * scale), (int)std::lround(H * scale));
+            SetTextureFilter(canvas.texture, TEXTURE_FILTER_POINT);
+            ui::SetScale(scale);
             ClearFontCache();
             currentScale = scale;
         }
-        float dw = canvas.texture.width / (px * SSAA), dh = canvas.texture.height / (px * SSAA);   // in screen points
+        float dw = canvas.texture.width / px, dh = canvas.texture.height / px;   // in screen points
         float offX = std::floor((sw - dw) * 0.5f), offY = std::floor((sh - dh) * 0.5f);
         SetMouseOffset((int)-offX, (int)-offY);
         SetMouseScale(px / scale, px / scale);
@@ -306,7 +309,7 @@ int main(int argc, char** argv) {
         BeginTextureMode(canvas);
         ClearBackground(col::bg);
         Camera2D cam = {};
-        cam.zoom = scale * SSAA;
+        cam.zoom = scale;
         BeginMode2D(cam);
         ui::BeginFrame();
         Backdrop((float)GetTime());
@@ -331,9 +334,6 @@ int main(int argc, char** argv) {
         DrawToasts(dt);
         EndMode2D();
         EndTextureMode();
-        // Shrinking by exactly SSAA lands on mip level log2(SSAA): a clean box filter.
-        GenTextureMipmaps(&canvas.texture);
-        SetTextureFilter(canvas.texture, TEXTURE_FILTER_TRILINEAR);
 
         // ---- present ----------------------------------------------------
         BeginDrawing();
@@ -348,10 +348,31 @@ int main(int argc, char** argv) {
         SetMouseCursor(WantsIBeam() ? MOUSE_CURSOR_IBEAM : WantsHandCursor() ? MOUSE_CURSOR_POINTING_HAND : MOUSE_CURSOR_DEFAULT);
 
         frame++;
+        if (bench) {
+            double now = GetTime();
+            if (frame > 1) {
+                double ms = (now - benchLast) * 1000.0;
+                if (ms > benchWorst) benchWorst = ms;
+                if (ms > 1000.0 / 60) benchSlow++;
+            }
+            benchLast = now;
+            // tour: a new screen every 12 frames, as a student clicking around would
+            if (benchTour && frame % 12 == 0) {
+                static const SceneId tour[] = {SceneId::Home, SceneId::Study, SceneId::Practice, SceneId::Mock,
+                                               SceneId::Quiz, SceneId::Visualizer, SceneId::ListLab, SceneId::Grid, SceneId::Login};
+                int k = (frame / 12) % 9;
+                app.Go(tour[k], tour[k] == SceneId::Practice && (frame / 108) % 2 ? "isLeapYear" : "");
+                if (frame / 12 % 4 == 3) app.themePickerOpen = !app.themePickerOpen;
+            }
+        }
+        if (bench && frame == 30) benchStart = GetTime();   // after fonts and caches warm up
+        if (bench && frame == shotFrame && frame > 30)
+            printf("bench: %.2f ms/frame over %d frames, worst %.1f ms, %d frames over 16.7 ms, startup %.2f s, window %dx%d, canvas %dx%d\n",
+                   (GetTime() - benchStart) * 1000.0 / (frame - 30), frame - 30, benchWorst, benchSlow, benchStart,
+                   GetScreenWidth(), GetScreenHeight(), canvas.texture.width, canvas.texture.height), fflush(stdout);
         if (shotFile && frame == shotFrame) {
             Image img = LoadImageFromTexture(canvas.texture);
             ImageFlipVertical(&img);
-            ImageResize(&img, img.width / SSAA, img.height / SSAA);   // back to the output size
             ImageFormat(&img, PIXELFORMAT_UNCOMPRESSED_R8G8B8);
             ExportImage(img, shotFile);
             UnloadImage(img);

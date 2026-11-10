@@ -79,6 +79,8 @@ raylib is downloaded automatically the first time.
 ./build/auth_tests                # student accounts: hashing against published test vectors,
                                   # register, login, bad input, what ends up on disk
 ./build/scrollbar_tests           # scrollbar geometry: thumb position and dragging
+SEGFAULT_BENCH=1920x1080 ./build/Segfault --shot 0 - out.png 330   # frame times (add
+                                  # SEGFAULT_BENCH_TOUR=1 to visit every screen)
 ./build/Segfault --selftest   # compiles every problem's reference solution with every compiler
                                   # found and checks that all tests pass and every starter fails;
                                   # also checks lesson links and the visualizer programs
@@ -100,9 +102,8 @@ third_party/     TinyCC for Windows (LGPL, see COPYING.txt)
 resources/fonts  Inter + JetBrains Mono (SIL OFL)
 ```
 
-The UI is anti-aliased by supersampling: it is drawn into a canvas 4x larger than the window
-(2x on very large windows) and shrunk with mipmaps, so text and rounded corners are smooth.
-The Windows/macOS builds are DPI-aware, so text stays sharp on any screen.
+Text is rendered at exactly the font's pixel size for the current window scale, and the
+Windows/macOS builds are DPI-aware, so text stays sharp on any screen.
 
 ## Credits
 raylib (zlib), TinyCC (LGPL 2.1), Inter and JetBrains Mono (SIL OFL 1.1).
