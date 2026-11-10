@@ -333,6 +333,12 @@ AuthResult UserStore::ResetPassword(const std::string& username, const std::stri
     return res;
 }
 
+std::vector<std::string> UserStore::Usernames() const {
+    std::vector<std::string> names;
+    for (const Record& r : ReadRecords()) names.push_back(r.username);
+    return names;
+}
+
 bool UserStore::HasRecoveryCode(const std::string& username) const {
     Record r;
     return FindRecord(username, r) && !r.codeHash.empty();

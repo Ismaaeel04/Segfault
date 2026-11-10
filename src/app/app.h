@@ -22,7 +22,7 @@ inline Color TopicColor(int s) { return SectionColor(s); }
 
 // ------------------------------------------------------------- scenes -----
 // New scenes go before Count: --shot selects a scene by its number.
-enum class SceneId { Home, Study, Practice, Mock, Quiz, Visualizer, ListLab, Grid, Login, Count };
+enum class SceneId { Home, Study, Practice, Mock, Quiz, Visualizer, ListLab, Grid, Login, Leaderboard, Count };
 
 class Scene {
 public:
@@ -99,6 +99,16 @@ void SignIn(const std::string& username);
 // Forgets the current student. Scenes must be rebuilt: main does both.
 void SignOut();
 
+// One student on the leaderboard.
+struct LeaderRow {
+    std::string name;
+    bool you = false;
+    int xp = 0, level = 1, solved = 0, lessons = 0, answered = 0, correct = 0;
+    int bestMock = -1;   // best mock exam score in %, -1 = none taken
+};
+// Every student on this computer (read from their progress files).
+std::vector<LeaderRow> LoadLeaderboard();
+
 // Applies a theme and remembers it for this student and this computer.
 void SelectTheme(int index);
 void LoadLastTheme();   // the login screen uses whichever theme was used last
@@ -119,6 +129,7 @@ namespace sources {
 
 // Scene factories (scenes/*.cpp)
 Scene* CreateLoginScene();
+Scene* CreateLeaderboardScene();
 Scene* CreateHomeScene();
 Scene* CreateStudyScene();
 Scene* CreatePracticeScene();

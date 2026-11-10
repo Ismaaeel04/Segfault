@@ -44,7 +44,15 @@ void IconQuiz(Rectangle r, Color c) {
 class HomeScene : public Scene {
 public:
     const char* Title() const override { return "Home"; }
-    void Enter(const std::string&) override { confirmReset = false; for (float& l : lift) l = 0; }
+    void Enter(const std::string&) override {
+        confirmReset = false;
+        for (float& l : lift) l = 0;
+        // your place by XP, for the leaderboard button
+        place = 0;
+        std::vector<LeaderRow> rows = LoadLeaderboard();
+        students = (int)rows.size();
+        for (const LeaderRow& r : rows) if (r.you) { place = 1; for (const LeaderRow& o : rows) place += o.xp > r.xp; }
+    }
 
     void Frame(float dt) override {
         t += dt;
@@ -60,6 +68,7 @@ private:
     float t = 0;
     bool confirmReset = false;
     float lift[3] = {0, 0, 0};            // how far each card has risen under the mouse
+    int place = 0, students = 0;          // your place on the leaderboard (0 = not logged in)
 
     void HeroStat(float x, const std::string& value, const std::string& label, Color c) {
         Text(value, x, 92, 22, c, F_DISPLAY);
@@ -85,6 +94,16 @@ private:
         for (const Problem& pr : Problems()) solved += p.Has("solved:" + pr.id);
         for (const Lesson& l : Lessons()) lessons += p.Has("lesson:" + l.id);
         float x = r.x + r.width - 372;
+        std::string label = place ? "Leaderboard   #" + std::to_string(place) + " of " + std::to_string(students) : "Leaderboard";
+        float lw = Measure(label, 14, F_BOLD).x + 64;
+        Rectangle lb = {x - 44 - lw, r.y + 17, lw, 40};
+        if (Button(lb, label, BTN_DEFAULT, true, 14)) app.Go(SceneId::Leaderboard, "");
+        // a little trophy
+        Color gold = Tone({250, 204, 21, 255});
+        float ix = lb.x + 20, iy = lb.y + 12;
+        RoundRect({ix - 6, iy, 12, 9}, 3, gold);
+        DrawRectangleRec({ix - 1.5f, iy + 8, 3, 5}, gold);
+        RoundRect({ix - 5, iy + 13, 10, 3}, 1.5f, gold);
         DrawRectangleRec({x - 22, r.y + 14, 1, r.height - 28}, Alpha(col::border, 0.8f));
         HeroStat(x, std::to_string(p.Level()), "level", col::warn);
         HeroStat(x + 92, std::to_string(solved) + "/" + std::to_string(Problems().size()), "solved", col::heading);

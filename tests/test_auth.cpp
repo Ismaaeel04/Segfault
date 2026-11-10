@@ -167,6 +167,14 @@ int main() {
         CHECK(!fs::exists(root + "/users.txt.tmp"));
     }
 
+    printf("[list of students]\n");
+    {
+        std::vector<std::string> names = store.Usernames();
+        auto has = [&](const char* n) { for (auto& s : names) if (s == n) return true; return false; };
+        CHECK(has("Alice") && has("bob") && has("frank") && has("con"));
+        CHECK(!has("dave") && !has("x") && !has("../evil"));                             // damaged lines skipped
+    }
+
     printf("[accounts from before recovery codes]\n");
     {
         // a line in the old format, as written before recovery codes existed

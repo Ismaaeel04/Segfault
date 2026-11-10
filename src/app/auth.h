@@ -59,6 +59,9 @@ public:
     // just proved who they are (logged in).
     AuthResult CreateRecoveryCode(const std::string& username) const;
 
+    // Every registered student, as spelled when they registered.
+    std::vector<std::string> Usernames() const;
+
     // Folder for a student's data, with a trailing slash. Names are restricted
     // to letters, digits, '_' and '-', and the "user_" prefix keeps Windows
     // reserved names such as "con" safe to use.

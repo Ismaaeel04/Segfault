@@ -47,8 +47,15 @@ made before recovery codes existed get a code the next time they log in.
 
 The **Theme** button in the top bar opens a picker with seven themes: Midnight, Ocean, Forest,
 Ember and Arcade (dark), Paper and Sand (light). The choice applies straight away and is saved
-to the student's account. `--selftest` checks every theme's text and code colours for contrast.
+to the student's account. The mouse cursor (arrow, hand and text cursor) is drawn in the
+theme's colours too; it is a real system cursor, so it moves without delay. `--selftest` checks every theme's text and code colours for contrast.
 Palettes live in `src/app/theme.cpp`.
+
+## Leaderboard
+
+**Leaderboard** on the home screen ranks every student on this computer by XP, problems solved,
+quiz accuracy or best mock exam, with the top three on a podium. It reads each student's
+progress file, so it only includes students who use this computer.
 
 ## How your code is compiled
 

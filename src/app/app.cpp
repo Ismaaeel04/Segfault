@@ -108,6 +108,11 @@ float SectionMastery(int section) {
 }
 
 // ============================================================== accounts ===
+static std::string ToLowerCopy(std::string s) {
+    for (char& c : s) c = (char)std::tolower((unsigned char)c);
+    return s;
+}
+
 void SignIn(const std::string& username) {
     app.user = username;
     app.userDir = auth::UserStore(app.dataDir + "segfault_users").UserDir(username);
@@ -115,6 +120,30 @@ void SignIn(const std::string& username) {
     app.progress.Load(app.userDir + "segfault_progress.txt");
     if (!app.progress.theme.empty()) ui::ApplyTheme(ui::ThemeIndex(app.progress.theme));
     app.Go(SceneId::Home);
+}
+
+std::vector<LeaderRow> LoadLeaderboard() {
+    std::vector<LeaderRow> rows;
+    auth::UserStore store(app.dataDir + "segfault_users");
+    for (const std::string& name : store.Usernames()) {
+        LeaderRow r;
+        r.name = name;
+        r.you = !app.user.empty() && ToLowerCopy(name) == ToLowerCopy(app.user);
+        Progress p;
+        if (r.you) p = app.progress;   // the newest numbers, even before they are saved
+        else p.Load(store.UserDir(name) + "segfault_progress.txt");
+        r.xp = p.xp;
+        r.level = p.Level();
+        r.answered = p.quizAnswered;
+        r.correct = p.quizCorrect;
+        // only problems and lessons that exist, the same as the home screen counts
+        for (const Problem& pr : Problems()) r.solved += p.Has("solved:" + pr.id);
+        for (const Lesson& l : Lessons()) r.lessons += p.Has("lesson:" + l.id);
+        for (const auto& b : p.best)
+            if (b.first.rfind("mock:", 0) == 0) r.bestMock = std::max(r.bestMock, b.second);
+        rows.push_back(r);
+    }
+    return rows;
 }
 
 static std::string LastThemePath() { return app.dataDir + "segfault_theme.txt"; }
