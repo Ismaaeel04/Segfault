@@ -87,7 +87,7 @@ private:
 
         float x = r.x + 40, y = r.y + 44;
         DrawLogo({x, y, 56, 56}, (float)GetTime());
-        Text("Segfault", x, y + 78, 42, WHITE, F_DISPLAY);
+        Text("SegFault", x, y + 78, 42, WHITE, F_DISPLAY);
         Text("Learn C & C++ by writing it.", x, y + 132, 17, Alpha(WHITE, 0.85f), F_MEDIUM);
 
         y += 190;

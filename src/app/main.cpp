@@ -121,11 +121,11 @@ static bool TopBar(Scene* scene) {
 
     float tx = logo.x + logo.width + 12;
     if (home || login) {
-        Text("Segfault", tx, 13, 22, col::heading, F_DISPLAY);
+        Text("SegFault", tx, 13, 22, col::heading, F_DISPLAY);
         Text("Learn C & C++ by writing it", tx + 1, 40, 13, col::dim, F_MEDIUM);
     } else {
-        Text("Segfault", tx, 22, 17, col::dim, F_DISPLAY);
-        float cx = tx + Measure("Segfault", 17, F_DISPLAY).x + 14;
+        Text("SegFault", tx, 22, 17, col::dim, F_DISPLAY);
+        float cx = tx + Measure("SegFault", 17, F_DISPLAY).x + 14;
         DrawLineEx({cx - 2, 26}, {cx + 3, 32}, 2, col::faint);
         DrawLineEx({cx + 3, 32}, {cx - 2, 38}, 2, col::faint);
         Text(Ellipsize(scene->Title(), 19, F_HEAVY, W - 252 - 112 - 24 - (cx + 16)), cx + 16, 20, 19, col::heading, F_HEAVY);
@@ -312,7 +312,7 @@ int main(int argc, char** argv) {
     if (shotFile) flags |= FLAG_WINDOW_HIDDEN;
     SetConfigFlags(flags);
     SetTraceLogLevel(LOG_WARNING);
-    InitWindow((int)W, (int)H, "Segfault - Learn C & C++");
+    InitWindow((int)W, (int)H, "SegFault - Learn C & C++");
     SetExitKey(KEY_NULL);
     SetTargetFPS(bench ? 0 : 60);
     SetWindowMinSize(800, 500);

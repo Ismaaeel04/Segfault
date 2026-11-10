@@ -1,4 +1,4 @@
-# Segfault - learn C & C++ by writing it
+# SegFault - learn C & C++ by writing it
 
 Segfault is a desktop app (C/C++17 + [raylib 5.5](https://www.raylib.com/)) for preparing the
 **coding exams**: Lab1 (numbers, loops, arrays, 2D arrays, parsing C code) and Exam 2 (pointers,
