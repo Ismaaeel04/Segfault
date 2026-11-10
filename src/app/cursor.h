@@ -11,8 +11,9 @@ namespace ui {
 
 enum CursorKind { CURSOR_ARROW, CURSOR_HAND, CURSOR_IBEAM, CURSOR_COUNT };
 
-// Call once per frame. Rebuilds the cursors when the theme has changed.
-void SetAppCursor(CursorKind kind);
+// Call once per frame. Rebuilds the cursors when the theme has changed, or
+// falls back to the standard OS cursors when `custom` is false.
+void SetAppCursor(CursorKind kind, bool custom = true);
 void UnloadCursors();
 // The picture of a cursor, size x size pixels, in the current theme.
 Image CursorImage(CursorKind kind, int size);
