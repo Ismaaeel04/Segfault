@@ -320,12 +320,13 @@ void DrawLogo(Rectangle r, float time, float hot) {
     Color star = ContrastRatio(col::pointer, mid) >= 1.8f ? Mix(col::pointer, WHITE, 0.15f) : ink;
     const float len = s * 0.15f, th = std::max(1.5f, s * 0.075f);
     const float spin = time * (0.8f + 2.4f * hot);
+    const Vector2 sc = {c.x, c.y - s * 0.06f};
     for (int k = 0; k < 3; k++) {
         float a = spin + k * 1.0472f;   // 60 degrees apart
         Vector2 d = {std::cos(a) * len, std::sin(a) * len};
-        DrawLineEx({c.x - d.x, c.y - d.y}, {c.x + d.x, c.y + d.y}, th, star);
+        DrawLineEx({sc.x - d.x, sc.y - d.y}, {sc.x + d.x, sc.y + d.y}, th, star);
     }
-    DrawCircleV(c, th * 0.6f, star);
+    DrawCircleV(sc, th * 0.6f, star);
 }
 
 void SoftGlow(Vector2 center, float radius, Color c, float strength) {
