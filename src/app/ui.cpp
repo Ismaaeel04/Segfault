@@ -238,6 +238,9 @@ void RoundRect(Rectangle r, float radius, Color c) {
 void RoundRectLines(Rectangle r, float radius, float thick, Color c) {
     float m = std::min(r.width, r.height);
     if (m <= 0) return;
+    // A whole number of screen pixels, or a 1-unit line comes out 1 or 2 pixels
+    // wide depending on where it lands, which looks broken.
+    thick = std::max(1.0f, std::round(thick * gScale)) / gScale;
     DrawRectangleRoundedLinesEx(r, std::min(1.0f, radius * 2 / m), 16, thick, c);
 }
 void Shadow(Rectangle r, float radius, float strength) {
@@ -256,21 +259,42 @@ void Panel(Rectangle r, Color fill, float radius) {
     } else {
         RoundRect(r, radius, fill);
     }
-    RoundRectLines(r, radius, 1, Alpha(col::border, 0.6f));
+    RoundRectLines(r, radius, 1, col::border);
+}
+
+// Rounded rectangle filled with colours that change across it. raylib has no
+// rounded gradient, so the rounded ends are drawn one pixel row at a time and
+// the straight middle in one piece. Every row edge is computed the same way,
+// so neighbouring rows meet exactly: no gaps and no doubled lines.
+static void GradientShape(Rectangle r, float radius, Color tl, Color tr, Color bl, Color br) {
+    if (r.width <= 0 || r.height <= 0) return;
+    radius = std::min(radius, std::min(r.width, r.height) / 2);
+    auto at = [&](Color a, Color b, float t) { return Mix(a, b, std::clamp(t, 0.0f, 1.0f)); };
+    auto band = [&](float y0, float y1) {
+        float mid = (y0 + y1) / 2;
+        float d = mid < radius ? radius - mid : mid > r.height - radius ? mid - (r.height - radius) : 0;
+        float inset = radius - std::sqrt(std::max(0.0f, radius * radius - d * d));
+        float t0 = y0 / r.height, t1 = y1 / r.height;
+        DrawRectangleGradientEx({r.x + inset, r.y + y0, r.width - inset * 2, y1 - y0},
+                                at(tl, bl, t0), at(tl, bl, t1), at(tr, br, t1), at(tr, br, t0));
+    };
+    const int rows = std::max(1, (int)std::ceil(radius * gScale));
+    auto edge = [&](int k) { return radius * k / rows; };
+    for (int k = 0; k < rows; k++) band(edge(k), edge(k + 1));                                   // top
+    if (r.height > radius * 2) band(radius, r.height - radius);                                   // middle
+    for (int k = rows; k > 0; k--) band(r.height - edge(k), r.height - edge(k - 1));            // bottom
 }
 
 void GradientRoundRect(Rectangle r, float radius, Color left, Color right) {
-    if (r.width <= 0 || r.height <= 0) return;
-    radius = std::min(radius, std::min(r.width, r.height) / 2);
-    // raylib has no rounded gradient, so it is drawn one pixel row at a time.
-    const float step = 1.0f / gScale;
-    for (float y = 0; y < r.height; y += step) {
-        float h = std::min(step, r.height - y);
-        float mid = y + h / 2;
-        float d = mid < radius ? radius - mid : mid > r.height - radius ? mid - (r.height - radius) : 0;
-        float inset = radius - std::sqrt(std::max(0.0f, radius * radius - d * d));
-        DrawRectangleGradientEx({r.x + inset, r.y + y, r.width - inset * 2, h}, left, left, right, right);
-    }
+    GradientShape(r, radius, left, right, left, right);
+}
+
+void GradientRoundRectV(Rectangle r, float radius, Color top, Color bottom) {
+    GradientShape(r, radius, top, top, bottom, bottom);
+}
+
+void PanelTint(Rectangle r, float radius, Color c, float strength) {
+    GradientRoundRectV({r.x, r.y, r.width, r.height * 0.65f}, radius, Alpha(c, strength), Alpha(c, 0));
 }
 
 void SoftGlow(Vector2 center, float radius, Color c, float strength) {

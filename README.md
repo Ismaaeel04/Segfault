@@ -45,11 +45,14 @@ made before recovery codes existed get a code the next time they log in.
 
 ## Themes
 
-The **Theme** button in the top bar opens a picker with seven themes: Midnight, Ocean, Forest,
-Ember and Arcade (dark), Paper and Sand (light). The choice applies straight away and is saved
-to the student's account. The mouse cursor (arrow, hand and text cursor) is drawn in the
-theme's colours too; it is a real system cursor, so it moves without delay. `--selftest` checks every theme's text and code colours for contrast.
-Palettes live in `src/app/theme.cpp`.
+The **Theme** button in the top bar opens a picker with eight themes. Dark: Midnight (the
+original), Catppuccin (Mocha), Nord, Dracula, Gruvbox and Everforest. Light: Paper and Latte
+(Catppuccin). The community ones use the published colours of those palettes, which are
+favourites in editor-theme discussions; a few colours are nudged where `--selftest` found them
+too faint. The choice applies straight away and is saved to the student's account. The mouse
+cursor (arrow, hand and text cursor) is drawn in the theme's colours too; it is a real system
+cursor, so it moves without delay. `--selftest` checks every theme's text and code colours for
+contrast. Palettes live in `src/app/theme.cpp`.
 
 ## Profile
 
@@ -130,5 +133,6 @@ Windows/macOS builds are DPI-aware, so text stays sharp on any screen.
 
 ## Credits
 raylib (zlib), TinyCC (LGPL 2.1), Inter and JetBrains Mono (SIL OFL 1.1).
+Colour palettes: Catppuccin, Nord, Dracula, Gruvbox and Everforest (all MIT).
 Content is based on the SETU module material: Lab1.cpp, the Coding Exam 2 brief, and the
 "Pointers in C,C++" and "Memory Management" lecture notes.

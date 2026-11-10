@@ -66,6 +66,11 @@ void Panel(Rectangle r, Color fill = col::panel, float radius = 12);
 void Shadow(Rectangle r, float radius, float strength = 1.0f);
 // Left-to-right gradient. The colours should be opaque.
 void GradientRoundRect(Rectangle r, float radius, Color left, Color right);
+// Top-to-bottom gradient; colours may be see-through.
+void GradientRoundRectV(Rectangle r, float radius, Color top, Color bottom);
+// A wash of colour at the top of a panel that fades out downwards. It stays
+// inside the rounded corners (a clipped glow would spill into them).
+void PanelTint(Rectangle r, float radius, Color c, float strength);
 void SoftGlow(Vector2 center, float radius, Color c, float strength);
 void Backdrop(float time);       // the soft background behind every screen
 void Arrow(Vector2 from, Vector2 to, Color c, float thick = 2.0f, float head = 10.0f);

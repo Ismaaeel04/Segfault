@@ -80,9 +80,8 @@ private:
         const Color left = Mix(col::accent, BLACK, 0.5f);
         const Color right = Mix(Mix(col::accent, col::accent2, 0.6f), BLACK, 0.62f);
         GradientRoundRect(r, 20, left, right);
+        GradientRoundRectV(r, 20, Alpha(WHITE, 0.08f), Alpha(BLACK, 0.18f));   // light from above
         BeginClip(r);
-        SoftGlow({r.x + 360, r.y + 40}, 240, WHITE, 0.14f);
-        SoftGlow({r.x + 40, r.y + 640}, 260, BLACK, 0.28f);
         DotGrid({r.x + 250, r.y + 20, 150, 110}, 18, Alpha(WHITE, 0.22f));
         EndClip();
 

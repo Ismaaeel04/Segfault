@@ -102,10 +102,8 @@ private:
             Rectangle card = {x0 + k * (w + gap), 156 + lift, w, 188 - lift};
             Color medal = Medal(place);
             Panel(card, r.you ? Mix(col::panel, col::accent, 0.12f) : col::panel, 18);
-            BeginClip({card.x + 1, card.y + 1, card.width - 2, card.height - 2});
-            SoftGlow({card.x + card.width / 2, card.y}, 170, medal, 0.22f);
-            EndClip();
-            RoundRect({card.x + card.width / 2 - 32, card.y, 64, 4}, 2, medal);
+            PanelTint(card, 18, medal, 0.14f);
+            RoundRect({card.x + card.width / 2 - 32, card.y + 1, 64, 3}, 1.5f, medal);
 
             Rectangle av = {card.x + card.width / 2 - 30, card.y + 22, 60, 60};
             Avatar(av, r);

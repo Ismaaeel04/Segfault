@@ -62,9 +62,7 @@ private:
 
     void Picture(Rectangle r) {
         Panel(r, col::panel, 18);
-        BeginClip({r.x + 1, r.y + 1, r.width - 2, r.height - 2});
-        SoftGlow({r.x + r.width / 2, r.y + 130}, 230, col::accent, 0.16f);
-        EndClip();
+        PanelTint(r, 18, col::accent, 0.10f);
         Rectangle av = {r.x + r.width / 2 - 90, r.y + 40, 180, 180};
         avatar::Draw(av, app.user, app.progress.avatarColour);
         TextCenter(app.user, {r.x, r.y + 236, r.width, 34}, 28, col::heading, F_DISPLAY);

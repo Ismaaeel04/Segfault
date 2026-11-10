@@ -127,11 +127,9 @@ private:
         if (hover) Shadow(rr, 18, 1.5f);
         Panel(rr, hover ? col::panelHi : col::panel, 18);
         // soft glow of the card's colour in its corner
-        BeginClip({rr.x + 1, rr.y + 1, rr.width - 2, rr.height - 2});
-        SoftGlow({rr.x + rr.width - 20, rr.y + 16}, 190, c.color, hover ? 0.24f : 0.15f);
-        EndClip();
+        PanelTint(rr, 18, c.color, hover ? 0.16f : 0.10f);
         if (hover) RoundRectLines(rr, 18, 1.5f, Alpha(c.color, 0.9f));
-        RoundRect({rr.x + 24, rr.y, 64, 4}, 2, c.color);
+        RoundRect({rr.x + 24, rr.y + 1, 64, 3}, 1.5f, c.color);
         Rectangle ic = {rr.x + 24, rr.y + 28, 58, 58};
         RoundRect(ic, 14, Alpha(c.color, 0.16f));
         RoundRectLines(ic, 14, 1, Alpha(c.color, 0.3f));
