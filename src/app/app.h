@@ -22,7 +22,7 @@ inline Color TopicColor(int s) { return SectionColor(s); }
 
 // ------------------------------------------------------------- scenes -----
 // New scenes go before Count: --shot selects a scene by its number.
-enum class SceneId { Home, Study, Practice, Mock, Quiz, Visualizer, ListLab, Grid, Login, Leaderboard, Profile, Count };
+enum class SceneId { Home, Study, Practice, Mock, Quiz, Visualizer, ListLab, Grid, Login, Leaderboard, Profile, Intro, Count };
 
 class Scene {
 public:
@@ -135,6 +135,7 @@ namespace sources {
 
 // Scene factories (scenes/*.cpp)
 Scene* CreateLoginScene();
+Scene* CreateIntroScene();
 Scene* CreateLeaderboardScene();
 Scene* CreateProfileScene();
 Scene* CreateHomeScene();

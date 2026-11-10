@@ -39,6 +39,7 @@ static void CreateScenes() {
     gScenes[(int)SceneId::ListLab].reset(CreateListLabScene());
     gScenes[(int)SceneId::Grid].reset(CreateGridScene());
     gScenes[(int)SceneId::Login].reset(CreateLoginScene());
+    gScenes[(int)SceneId::Intro].reset(CreateIntroScene());
     gScenes[(int)SceneId::Leaderboard].reset(CreateLeaderboardScene());
     gScenes[(int)SceneId::Profile].reset(CreateProfileScene());
 }
@@ -354,7 +355,7 @@ int main(int argc, char** argv) {
     if (!shotFile) SetLogoIcon();
 
     if (shotFile) app.Go((SceneId)shotScene, shotParam);
-    else if (app.user.empty()) app.Go(SceneId::Login);
+    else app.Go(SceneId::Intro, app.user.empty() ? "login" : "home");
 
     RenderTexture2D canvas = {};
     float currentScale = -1;
@@ -421,9 +422,10 @@ int main(int argc, char** argv) {
             fade = std::fmax(0.0f, fade - dt * 7.0f);
         }
         SetInputEnabled(!pickerWasOpen);
-        bool back = TopBar(scene);
+        bool back = app.current == SceneId::Intro ? false : TopBar(scene);
         if (pickerWasOpen) ThemePicker();
-        if ((back || (IsKeyPressed(KEY_ESCAPE) && !AnyTextFocused() && !pickerWasOpen)) && app.current != SceneId::Home && app.current != SceneId::Login) {
+        if ((back || (IsKeyPressed(KEY_ESCAPE) && !AnyTextFocused() && !pickerWasOpen)) && app.current != SceneId::Home && app.current != SceneId::Login &&
+            app.current != SceneId::Intro) {
             if (app.hasReturn) {
                 SceneId to = app.returnScene;
                 std::string param = app.returnParam;

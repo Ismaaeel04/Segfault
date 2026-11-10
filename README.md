@@ -23,7 +23,8 @@ The exams are about **writing code**, so the app is too. It has three main parts
 
 ## Student accounts
 
-The app opens on a login screen. Each student registers with a username and password, and their
+The app opens with a short intro (the logo and a loading bar while it looks for a compiler;
+any key skips it), then the login screen. Each student registers with a username and password, and their
 XP, progress and saved code are kept separately, so several students can share one computer.
 Accounts live next to the executable:
 
