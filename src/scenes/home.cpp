@@ -214,6 +214,7 @@ private:
         Panel(r, col::panel, 18);
         Text("Progress by section", r.x + 24, r.y + 22, 18, col::heading, F_HEAVY);
         if (Button({r.x + r.width - 104, r.y + 16, 84, 32}, "Reset", BTN_GHOST, true, 13)) confirmReset = true;
+        if (Button({r.x + r.width - 222, r.y + 16, 108, 32}, "Roadmap", BTN_DEFAULT, true, 13)) app.Go(SceneId::Roadmap, "");
         for (int s = 0; s < S_COUNT; s++) {
             int colIdx = s < 5 ? 0 : 1, rowIdx = s < 5 ? s : s - 5;
             float x = r.x + 24 + colIdx * 340, y = r.y + 62 + rowIdx * 36;

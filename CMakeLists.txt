@@ -111,3 +111,6 @@ add_test(NAME brackets COMMAND bracket_tests)
 
 add_executable(complete_tests tests/test_complete.cpp)
 add_test(NAME complete COMMAND complete_tests)
+
+add_executable(streak_tests tests/test_streak.cpp)
+add_test(NAME streak COMMAND streak_tests)

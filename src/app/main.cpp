@@ -40,6 +40,7 @@ static void CreateScenes() {
     gScenes[(int)SceneId::Grid].reset(CreateGridScene());
     gScenes[(int)SceneId::Login].reset(CreateLoginScene());
     gScenes[(int)SceneId::Intro].reset(CreateIntroScene());
+    gScenes[(int)SceneId::Roadmap].reset(CreateRoadmapScene());
     gScenes[(int)SceneId::Leaderboard].reset(CreateLeaderboardScene());
     gScenes[(int)SceneId::Profile].reset(CreateProfileScene());
 }

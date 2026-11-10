@@ -65,6 +65,13 @@ to 20 MB). It is cropped to a square from the middle and saved as `avatar.png` i
 folder. Without a picture, your initial is shown on the colour you pick. The profile also shows
 your stats.
 
+## Roadmap
+
+**Roadmap** (in the "Progress by section" card on the home screen) shows the nine sections in
+the order they build on each other, with the two mock exam papers as milestones. Each node shows
+how far you are, and the topic to do next is marked. The side panel shows problems solved by
+difficulty, and a calendar of the days you earned XP with your current and best streak.
+
 ## Leaderboard
 
 **Leaderboard** on the home screen ranks every student on this computer by XP, problems solved,
@@ -108,6 +115,7 @@ raylib is downloaded automatically the first time.
 ./build/scrollbar_tests           # scrollbar geometry: thumb position and dragging
 ./build/paste_tests               # what a text box keeps from pasted text
 ./build/complete_tests            # editor autocompletion: what is suggested, and in what order
+./build/streak_tests              # activity days and streaks
 ./build/avatar_tests              # profile pictures: crop, round mask, paths with non-ASCII letters
 SEGFAULT_BENCH=1920x1080 ./build/Segfault --shot 0 - out.png 330   # frame times (add
                                   # SEGFAULT_BENCH_TOUR=1 to visit every screen)

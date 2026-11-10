@@ -1,11 +1,13 @@
 #include "app.h"
 #include "auth.h"
+#include "streak.h"
 #include "runner.h"
 #include "theme.h"
 #include "ui.h"
 #include "content/content.h"
 #include "exam_output.h"
 #include <cctype>
+#include <ctime>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -50,6 +52,11 @@ bool Progress::Mark(const std::string& key) {
 void Progress::AddXP(int amount, const std::string& why) {
     int before = Level();
     xp += amount;
+    {   // today counts as a day of practice
+        std::time_t now = std::time(nullptr);
+        std::tm tm = *std::localtime(&now);
+        days.insert(streak::Format(tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday));
+    }
     ui::Toast("+" + std::to_string(amount) + " XP   " + why, ui::col::accent2);
     if (Level() > before) ui::Toast("Level up!  You are level " + std::to_string(Level()), ui::col::warn);
     Save();
@@ -80,6 +87,7 @@ void Progress::Load(const std::string& file) {
         else if (key == "avatar") in >> avatarColour;
         else if (key == "trail") in >> trail;
         else if (key == "cursor") in >> customCursor;
+        else if (key == "day") { std::string v; in >> v; days.insert(v); }
         else { std::string rest; std::getline(in, rest); }
     }
 }
@@ -96,6 +104,7 @@ void Progress::Save() const {
     for (auto& d : done) out << "done " << d << "\n";
     for (int m : mistakes) out << "mistake " << m << "\n";
     for (auto& b : best) out << "best " << b.first << " " << b.second << "\n";
+    for (auto& d : days) out << "day " << d << "\n";
 }
 
 void Progress::Reset() {

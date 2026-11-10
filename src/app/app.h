@@ -22,7 +22,7 @@ inline Color TopicColor(int s) { return SectionColor(s); }
 
 // ------------------------------------------------------------- scenes -----
 // New scenes go before Count: --shot selects a scene by its number.
-enum class SceneId { Home, Study, Practice, Mock, Quiz, Visualizer, ListLab, Grid, Login, Leaderboard, Profile, Intro, Count };
+enum class SceneId { Home, Study, Practice, Mock, Quiz, Visualizer, ListLab, Grid, Login, Leaderboard, Profile, Intro, Roadmap, Count };
 
 class Scene {
 public:
@@ -43,6 +43,7 @@ struct Progress {
     int avatarColour = 0;                // avatar::Draw colour when there is no picture
     bool trail = true;                   // the cursor trail
     bool customCursor = true;            // theme-coloured mouse cursor (false = OS cursor)
+    std::set<std::string> days;          // days with XP earned ("2026-11-10"), for streaks
     std::string path;
 
     bool Has(const std::string& key) const { return done.count(key) > 0; }
@@ -136,6 +137,7 @@ namespace sources {
 // Scene factories (scenes/*.cpp)
 Scene* CreateLoginScene();
 Scene* CreateIntroScene();
+Scene* CreateRoadmapScene();
 Scene* CreateLeaderboardScene();
 Scene* CreateProfileScene();
 Scene* CreateHomeScene();
