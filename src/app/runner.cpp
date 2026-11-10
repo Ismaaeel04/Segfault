@@ -21,6 +21,7 @@ namespace runner {
 static std::vector<Compiler> gCompilers;
 static std::atomic<bool> gDone{false};
 static std::atomic<int> gActive{0};
+static std::string gPreferredLabel;
 static std::mutex gMutex;
 static std::thread gDetectThread;
 
@@ -88,7 +89,12 @@ static void Detect(const std::string& resourceDir) {
 
     std::lock_guard<std::mutex> lock(gMutex);
     gCompilers = found;
-    gActive = 0;
+    int activeIdx = 0;
+    if (!gPreferredLabel.empty()) {
+        for (size_t i = 0; i < found.size(); i++)
+            if (found[i].label == gPreferredLabel) { activeIdx = (int)i; break; }
+    }
+    gActive = activeIdx;
     gDone = true;
 }
 
@@ -101,7 +107,21 @@ void DetectNow(const std::string& resourceDir) { Detect(resourceDir); }
 bool DetectionDone() { return gDone.load(); }
 const std::vector<Compiler>& Compilers() { return gCompilers; }
 int ActiveIndex() { return gActive.load(); }
-void SetActive(int i) { if (i >= 0 && i < (int)gCompilers.size()) gActive = i; }
+void SetActive(int i) {
+    if (i >= 0 && i < (int)gCompilers.size()) {
+        gActive = i;
+        gPreferredLabel = gCompilers[i].label;
+    }
+}
+void SetPreferredLabel(const std::string& label) {
+    std::lock_guard<std::mutex> lock(gMutex);
+    gPreferredLabel = label;
+    if (gDone) {
+        for (size_t i = 0; i < gCompilers.size(); i++)
+            if (gCompilers[i].label == label) { gActive = (int)i; break; }
+    }
+}
+const std::string& PreferredLabel() { return gPreferredLabel; }
 const Compiler* Active() {
     if (!gDone || gCompilers.empty()) return nullptr;
     return &gCompilers[std::min<int>(gActive, (int)gCompilers.size() - 1)];

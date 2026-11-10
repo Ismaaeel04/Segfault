@@ -1,5 +1,6 @@
 #include "app.h"
 #include "auth.h"
+#include "runner.h"
 #include "theme.h"
 #include "ui.h"
 #include "content/content.h"
@@ -78,6 +79,7 @@ void Progress::Load(const std::string& file) {
         else if (key == "theme") in >> theme;
         else if (key == "avatar") in >> avatarColour;
         else if (key == "trail") in >> trail;
+        else if (key == "cursor") in >> customCursor;
         else { std::string rest; std::getline(in, rest); }
     }
 }
@@ -90,6 +92,7 @@ void Progress::Save() const {
     if (!theme.empty()) out << "theme " << theme << "\n";
     if (avatarColour) out << "avatar " << avatarColour << "\n";
     if (!trail) out << "trail 0\n";
+    if (!customCursor) out << "cursor 0\n";
     for (auto& d : done) out << "done " << d << "\n";
     for (int m : mistakes) out << "mistake " << m << "\n";
     for (auto& b : best) out << "best " << b.first << " " << b.second << "\n";
@@ -99,11 +102,13 @@ void Progress::Reset() {
     std::string p = path, t = theme;
     int a = avatarColour;
     bool tr = trail;
+    bool cur = customCursor;
     *this = Progress();
     path = p;
     theme = t;
     avatarColour = a;
     trail = tr;
+    customCursor = cur;
     Save();
 }
 
@@ -122,11 +127,19 @@ static std::string ToLowerCopy(std::string s) {
 }
 
 void SignIn(const std::string& username) {
+    bool prevTrail = app.progress.trail;
+    bool prevCursor = app.progress.customCursor;
     app.user = username;
+    app.lastUser = username;
     app.userDir = auth::UserStore(app.dataDir + "segfault_users").UserDir(username);
     app.progress = Progress();
+    app.progress.trail = prevTrail;
+    app.progress.customCursor = prevCursor;
     app.progress.Load(app.userDir + "segfault_progress.txt");
     if (!app.progress.theme.empty()) ui::ApplyTheme(ui::ThemeIndex(app.progress.theme));
+    else app.progress.theme = ui::Themes()[ui::CurrentTheme()].id;
+    app.progress.Save();
+    SaveAppSettings();
     app.Go(SceneId::Home);
 }
 
@@ -155,25 +168,72 @@ std::vector<LeaderRow> LoadLeaderboard() {
     return rows;
 }
 
+static std::string SettingsPath() { return app.dataDir + "segfault_settings.txt"; }
 static std::string LastThemePath() { return app.dataDir + "segfault_theme.txt"; }
+
+void SaveAppSettings() {
+    const char* themeId = ui::Themes()[ui::CurrentTheme()].id;
+    std::ofstream(LastThemePath()) << themeId << "\n";
+    std::ofstream out(SettingsPath());
+    if (!out) return;
+    out << "theme " << themeId << "\n";
+    out << "trail " << (app.progress.trail ? 1 : 0) << "\n";
+    out << "cursor " << (app.progress.customCursor ? 1 : 0) << "\n";
+    if (!app.user.empty()) out << "user " << app.user << "\n";
+    if (!app.lastUser.empty()) out << "last_user " << app.lastUser << "\n";
+    if (!runner::PreferredLabel().empty()) out << "compiler " << runner::PreferredLabel() << "\n";
+}
 
 void SelectTheme(int index) {
     ui::ApplyTheme(index);
     const char* id = ui::Themes()[ui::CurrentTheme()].id;
-    std::ofstream(LastThemePath()) << id << "\n";
     if (!app.user.empty()) { app.progress.theme = id; app.progress.Save(); }
+    SaveAppSettings();
 }
 
-void LoadLastTheme() {
-    std::ifstream in(LastThemePath());
+void LoadLastTheme(bool restoreSession) {
+    std::ifstream legacy(LastThemePath());
     std::string id;
-    if (in >> id) ui::ApplyTheme(ui::ThemeIndex(id));
+    if (legacy >> id) ui::ApplyTheme(ui::ThemeIndex(id));
+
+    std::ifstream in(SettingsPath());
+    std::string key, savedUser;
+    while (in >> key) {
+        if (key == "theme") { std::string t; in >> t; ui::ApplyTheme(ui::ThemeIndex(t)); }
+        else if (key == "trail") in >> app.progress.trail;
+        else if (key == "cursor") in >> app.progress.customCursor;
+        else if (key == "user") in >> savedUser;
+        else if (key == "last_user") in >> app.lastUser;
+        else if (key == "compiler") {
+            std::string comp;
+            std::getline(in >> std::ws, comp);
+            if (!comp.empty() && comp.back() == '\r') comp.pop_back();
+            runner::SetPreferredLabel(comp);
+        } else {
+            std::string rest;
+            std::getline(in, rest);
+        }
+    }
+    if (restoreSession && !savedUser.empty()) {
+        auth::UserStore store(app.dataDir + "segfault_users");
+        for (const std::string& name : store.Usernames()) {
+            if (ToLowerCopy(name) == ToLowerCopy(savedUser)) {
+                SignIn(name);
+                break;
+            }
+        }
+    }
 }
 
 void SignOut() {
+    bool keepTrail = app.progress.trail;
+    bool keepCursor = app.progress.customCursor;
     app.user.clear();
     app.userDir.clear();
     app.progress = Progress();   // no path: nothing can be saved until the next login
+    app.progress.trail = keepTrail;
+    app.progress.customCursor = keepCursor;
+    SaveAppSettings();
     app.Go(SceneId::Login);
 }
 

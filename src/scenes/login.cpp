@@ -17,7 +17,11 @@ enum class Mode { LogIn, Register, Forgot };
 class LoginScene : public Scene {
 public:
     const char* Title() const override { return "Log in"; }
-    void Enter(const std::string&) override { shownCode.clear(); SetMode(Mode::LogIn); }
+    void Enter(const std::string&) override {
+        shownCode.clear();
+        if (username.empty()) username = app.lastUser;
+        SetMode(Mode::LogIn);
+    }
 
     void Frame(float) override {
         const bool modal = !shownCode.empty();

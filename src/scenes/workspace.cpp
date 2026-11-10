@@ -33,6 +33,7 @@ void CompilerChip(Rectangle r) {
     Text(shown, r.x + 28, r.y + (r.height - 13.5f) / 2 - 1, 13.5f, col::text, F_MEDIUM);
     if (many && Clicked(r)) {
         runner::SetActive((runner::ActiveIndex() + 1) % (int)runner::Compilers().size());
+        SaveAppSettings();
         Toast("Compiler: " + runner::Active()->label, col::accent2);
     }
 }
