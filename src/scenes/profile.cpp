@@ -109,30 +109,30 @@ private:
 
     void Details(Rectangle r) {
         Panel(r, col::panel, 18);
-        float x = r.x + 32, y = r.y + 28;
+        float x = r.x + 32, y = r.y + 26;
         Text("Avatar colour", x, y, 20, col::heading, F_HEAVY);
-        Text("Shown with your initial when you have no picture.", x, y + 30, 14.5f, col::dim, F_MEDIUM);
-        y += 72;
-        const float d = 76, gap = (r.width - 64 - 5 * d) / 4;
+        Text("Shown with your initial when you have no picture.", x, y + 28, 14.5f, col::dim, F_MEDIUM);
+        y += 66;
+        const float d = 74, gap = (r.width - 64 - 5 * d) / 4;
         for (int i = 0; i < avatar::kColourCount; i++) {
-            Rectangle c = {x + (i % 5) * (d + gap), y + (i / 5) * (d + 44), d, d};
+            Rectangle c = {x + (i % 5) * (d + gap), y + (i / 5) * (d + 40), d, d};
             bool sel = app.progress.avatarColour == i || (i == 0 && app.progress.avatarColour < 0);
             bool hover = InputEnabled() && MouseIn(c);
             if (sel || hover) RoundRectLines({c.x - 5, c.y - 5, c.width + 10, c.height + 10}, d / 2 + 5, sel ? 2.5f : 1.5f,
                                              sel ? col::accent : col::faint);
             avatar::DrawInitial(c, app.user, i);
-            TextCenter(avatar::ColourName(i), {c.x - 10, c.y + d + 8, d + 20, 18}, 13, sel ? col::heading : col::dim, F_BOLD);
+            TextCenter(avatar::ColourName(i), {c.x - 10, c.y + d + 6, d + 20, 18}, 13, sel ? col::heading : col::dim, F_BOLD);
             if (Clicked(c)) {
                 app.progress.avatarColour = i;
                 app.progress.Save();
             }
         }
 
-        y += 2 * (d + 44) + 20;
+        y += 2 * (d + 40) + 14;
         DrawRectangleRec({x, y, r.width - 64, 1}, col::border);
-        y += 24;
+        y += 22;
         Text("Your stats", x, y, 20, col::heading, F_HEAVY);
-        y += 44;
+        y += 40;
         const int problems = (int)Problems().size(), lessons = (int)Lessons().size();
         const std::string stats[6][2] = {
             {std::to_string(me.level), "level"},
@@ -141,9 +141,9 @@ private:
             {std::to_string(me.lessons) + " / " + std::to_string(lessons), "lessons done"},
             {me.answered ? std::to_string((int)std::lround(100.0 * me.correct / me.answered)) + "%" : "-", "quiz accuracy"},
             {me.bestMock >= 0 ? std::to_string(me.bestMock) + "%" : "-", "best mock exam"}};
-        const float tw = (r.width - 64 - 2 * 16) / 3, th = 92;
+        const float tw = (r.width - 64 - 2 * 16) / 3, th = 94;
         for (int i = 0; i < 6; i++) {
-            Rectangle t = {x + (i % 3) * (tw + 16), y + (i / 3) * (th + 16), tw, th};
+            Rectangle t = {x + (i % 3) * (tw + 16), y + (i / 3) * (th + 14), tw, th};
             RoundRect(t, 12, Mix(col::panel, col::panelHi, 0.6f));
             Text(stats[i][0], t.x + 18, t.y + 16, 26, i == 0 ? col::warn : col::heading, F_DISPLAY);
             Text(stats[i][1], t.x + 18, t.y + 56, 13.5f, col::dim, F_MEDIUM);
