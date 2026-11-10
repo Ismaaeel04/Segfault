@@ -80,6 +80,7 @@ bool IconButton(Rectangle r, const std::string& glyph, bool enabled = true);
 bool ListItem(Rectangle r, const std::string& title, const std::string& sub, bool selected, Color accent, bool done);
 bool Tab(Rectangle r, const std::string& label, bool active);
 // Returns true when Enter is pressed. `id` must be unique per text box.
+// Ctrl+V pastes; Ctrl+C / Ctrl+X copy or cut the whole text (not when masked).
 // masked: draws every character as * (for passwords).
 bool TextBox(Rectangle r, std::string& text, int id, int maxLen = 64, bool numericOnly = false, const std::string& placeholder = "", bool masked = false);
 void ClearTextFocus();
@@ -112,7 +113,7 @@ bool OverScrollBar(Rectangle view, float contentHeight);
 float CodeLineHeight(float size);
 float CodeCharWidth(float size);
 void CodeLine(float x, float y, const std::string& line, float size, float alpha = 1.0f);
-// Draws a scrollable code panel. highlight = 0-based line index or -1.
+// Draws a scrollable code panel, with a Copy button while the mouse is over it. highlight = 0-based line index or -1.
 // lineTint (optional): a background colour per line (alpha 0 = none).
 void CodeView(Rectangle r, const std::vector<std::string>& lines, Scroll& scroll,
               int highlight = -1, float size = 15, const std::vector<Color>* lineTint = nullptr,

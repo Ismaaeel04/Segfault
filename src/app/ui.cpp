@@ -1,5 +1,6 @@
 #include "ui.h"
 #include "scrollbar.h"
+#include "paste.h"
 #include "theme.h"
 #include <algorithm>
 #include <cctype>
@@ -436,6 +437,20 @@ bool TextBox(Rectangle r, std::string& text, int id, int maxLen, bool numericOnl
         }
         if ((IsKeyPressed(KEY_BACKSPACE) || IsKeyPressedRepeat(KEY_BACKSPACE)) && !text.empty()) text.pop_back();
         if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_KP_ENTER)) submitted = true;
+
+        // Clipboard. A hidden password can be pasted (from a password manager)
+        // but never copied or cut out of the box.
+        bool ctrl = IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL) ||
+                    IsKeyDown(KEY_LEFT_SUPER) || IsKeyDown(KEY_RIGHT_SUPER);
+        if (ctrl && IsKeyPressed(KEY_V)) {
+            const char* clip = GetClipboardText();
+            if (clip) text = PasteInto(text, clip, maxLen, numericOnly, !masked);
+        }
+        if (ctrl && !masked && !text.empty() && (IsKeyPressed(KEY_C) || IsKeyPressed(KEY_X))) {
+            SetClipboardText(text.c_str());
+            if (IsKeyPressed(KEY_X)) text.clear();
+            else Toast("Copied", col::accent2);
+        }
     }
     if (active) RoundRectLines({r.x - 3, r.y - 3, r.width + 6, r.height + 6}, 11, 3, Alpha(col::accent, 0.22f));
     RoundRect(r, 8, col::codeBg);
@@ -665,6 +680,18 @@ void CodeView(Rectangle r, const std::vector<std::string>& lines, Scroll& scroll
     }
     EndClip();
     ScrollBar(view, contentH, scroll);
+
+    // A Copy button while the mouse is over the code. Only where it can be
+    // seen: a lesson can scroll a code block partly out of its panel.
+    Rectangle copy = {r.x + r.width - 92, r.y + r.height - 40, 74, 30};
+    bool visible = gClipStack.empty() ||
+                   (copy.y >= gClipStack.back().y && copy.y + copy.height <= gClipStack.back().y + gClipStack.back().height);
+    if (gInput && MouseIn(r) && visible && !lines.empty() && Button(copy, "Copy", BTN_DEFAULT, true, 13)) {
+        std::string all;
+        for (size_t i = 0; i < lines.size(); i++) all += lines[i] + (i + 1 < lines.size() ? "\n" : "");
+        SetClipboardText(all.c_str());
+        Toast("Code copied", col::accent2);
+    }
 }
 
 // =============================================================== toasts ====

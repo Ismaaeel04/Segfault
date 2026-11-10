@@ -28,14 +28,20 @@ XP, progress and saved code are kept separately, so several students can share o
 Accounts live next to the executable:
 
 ```
-segfault_users/users.txt         username, salt and password hash (PBKDF2-HMAC-SHA256, 600,000 rounds)
+segfault_users/users.txt         username, salt and password hash (PBKDF2-HMAC-SHA256, 600,000 rounds),
+                                 and the same for the recovery code
 segfault_users/user_<name>/      that student's progress and saved code
 ```
 
 Passwords are never stored. Accounts are local to the computer: they keep students' work apart,
 but anyone with access to the folder can read or delete these files, and a forgotten password
-can't be recovered from inside the app. Progress saved by an older version moves to the first
+can only be reset with the account's recovery code. Progress saved by an older version moves to the first
 account created.
+
+**Forgot password.** When an account is created the app shows a recovery code such as
+`ABCD-EFGH-JKMN`, once. *Forgot password?* on the login screen takes the username, that code and
+a new password. Each code works once: after a reset the student is given a new one. Accounts
+made before recovery codes existed get a code the next time they log in.
 
 ## Themes
 
@@ -79,6 +85,7 @@ raylib is downloaded automatically the first time.
 ./build/auth_tests                # student accounts: hashing against published test vectors,
                                   # register, login, bad input, what ends up on disk
 ./build/scrollbar_tests           # scrollbar geometry: thumb position and dragging
+./build/paste_tests               # what a text box keeps from pasted text
 SEGFAULT_BENCH=1920x1080 ./build/Segfault --shot 0 - out.png 330   # frame times (add
                                   # SEGFAULT_BENCH_TOUR=1 to visit every screen)
 ./build/Segfault --selftest   # compiles every problem's reference solution with every compiler
