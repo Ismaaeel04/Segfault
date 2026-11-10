@@ -77,6 +77,7 @@ void Progress::Load(const std::string& file) {
         else if (key == "correct") in >> quizCorrect;
         else if (key == "theme") in >> theme;
         else if (key == "avatar") in >> avatarColour;
+        else if (key == "trail") in >> trail;
         else { std::string rest; std::getline(in, rest); }
     }
 }
@@ -88,6 +89,7 @@ void Progress::Save() const {
     out << "xp " << xp << "\nanswered " << quizAnswered << "\ncorrect " << quizCorrect << "\n";
     if (!theme.empty()) out << "theme " << theme << "\n";
     if (avatarColour) out << "avatar " << avatarColour << "\n";
+    if (!trail) out << "trail 0\n";
     for (auto& d : done) out << "done " << d << "\n";
     for (int m : mistakes) out << "mistake " << m << "\n";
     for (auto& b : best) out << "best " << b.first << " " << b.second << "\n";
@@ -96,10 +98,12 @@ void Progress::Save() const {
 void Progress::Reset() {
     std::string p = path, t = theme;
     int a = avatarColour;
+    bool tr = trail;
     *this = Progress();
     path = p;
     theme = t;
     avatarColour = a;
+    trail = tr;
     Save();
 }
 

@@ -41,6 +41,7 @@ struct Progress {
     int quizAnswered = 0, quizCorrect = 0;
     std::string theme;                   // theme id chosen by this student ("" = not chosen)
     int avatarColour = 0;                // avatar::Draw colour when there is no picture
+    bool trail = true;                   // the cursor trail
     std::string path;
 
     bool Has(const std::string& key) const { return done.count(key) > 0; }

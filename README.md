@@ -51,7 +51,8 @@ original), Catppuccin (Mocha), Nord, Dracula, Gruvbox and Everforest. Light: Pap
 favourites in editor-theme discussions; a few colours are nudged where `--selftest` found them
 too faint. The choice applies straight away and is saved to the student's account. The mouse
 cursor (arrow, hand and text cursor) is drawn in the theme's colours too; it is a real system
-cursor, so it moves without delay. `--selftest` checks every theme's text and code colours for
+cursor, so it moves without delay. A short trail in the theme's colours follows the mouse and
+fades a fifth of a second after it stops; it can be switched off in the theme window. `--selftest` checks every theme's text and code colours for
 contrast. Palettes live in `src/app/theme.cpp`.
 
 ## Profile

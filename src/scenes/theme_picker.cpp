@@ -71,6 +71,20 @@ void ThemePicker() {
         if (Clicked(card)) SelectTheme(i);
     }
 
+    // cursor trail on / off
+    Rectangle tr = {r.x + pad, r.y + r.height - 64, 330, 48};
+    bool hover = MouseIn(tr);
+    RoundRect(tr, 12, hover ? col::panelHi : Mix(col::panel, col::panelHi, 0.5f));
+    Text("Cursor trail", tr.x + 16, tr.y + 7, 15, col::heading, F_BOLD);
+    Text("a soft line behind the pointer", tr.x + 16, tr.y + 27, 12.5f, col::dim, F_MEDIUM);
+    Rectangle sw = {tr.x + tr.width - 58, tr.y + 13, 42, 22};
+    RoundRect(sw, 11, app.progress.trail ? col::accent : col::border);
+    DrawCircleV({app.progress.trail ? sw.x + 31 : sw.x + 11, sw.y + 11}, 8, app.progress.trail ? OnColor(col::accent) : col::faint);
+    if (Clicked(tr)) {
+        app.progress.trail = !app.progress.trail;
+        if (!app.user.empty()) app.progress.Save();
+    }
+
     bool close = Button({r.x + r.width - pad - 140, r.y + r.height - 62, 140, 44}, "Done", BTN_PRIMARY);
     if (close || IsKeyPressed(KEY_ESCAPE)) app.themePickerOpen = false;
 }

@@ -10,6 +10,7 @@
 #include "raylib.h"
 #include "rlgl.h"
 #include "app.h"
+#include "trail.h"
 #include "avatar.h"
 #include "cursor.h"
 #include "runner.h"
@@ -346,6 +347,7 @@ int main(int argc, char** argv) {
         }
         if (IsKeyPressed(KEY_ESCAPE)) ClearTextFocus();
         DrawToasts(dt);
+        DrawCursorTrail(dt, app.progress.trail);
         EndMode2D();
         EndTextureMode();
 
