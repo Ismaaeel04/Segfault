@@ -156,6 +156,27 @@ std::string Pbkdf2Hex(const std::string& password, const std::string& salt, int 
     return out;
 }
 
+// ======================================================= recovery codes ====
+static const char kCodeAlphabet[] = "ABCDEFGHJKMNPQRSTVWXYZ23456789";   // no 0 O 1 I L U
+
+std::string NewRecoveryCode() {
+    std::random_device rd;
+    const int n = (int)sizeof(kCodeAlphabet) - 1;
+    std::string code;
+    for (int i = 0; i < 12; i++) {
+        if (i && i % 4 == 0) code += '-';
+        code += kCodeAlphabet[rd() % n];
+    }
+    return code;
+}
+
+std::string NormalizeRecoveryCode(const std::string& code) {
+    std::string out;
+    for (char c : code)
+        if (std::isalnum((unsigned char)c)) out += (char)std::toupper((unsigned char)c);
+    return out;
+}
+
 // =========================================================== validation ====
 std::string ValidateUsername(const std::string& u) {
     if ((int)u.size() < kMinUsername || (int)u.size() > kMaxUsername)
@@ -186,15 +207,52 @@ std::vector<UserStore::Record> UserStore::ReadRecords() const {
     std::vector<Record> records;
     std::ifstream in(root + "users.txt");
     std::string line;
-    while (std::getline(in, line)) {
+    for (size_t n = 0; std::getline(in, line); n++) {
         std::istringstream ss(line);
         std::string tag;
         Record r;
+        r.line = n;
         if (ss >> tag >> r.username >> r.iterations >> r.salt >> r.hash && tag == "user" &&
-            r.iterations > 0 && ValidateUsername(r.username).empty())
+            r.iterations > 0 && ValidateUsername(r.username).empty()) {
+            if (!(ss >> r.codeSalt >> r.codeHash)) r.codeSalt.clear(), r.codeHash.clear();
             records.push_back(r);
+        }
     }
     return records;
+}
+
+bool UserStore::FindRecord(const std::string& username, Record& out) const {
+    for (const Record& r : ReadRecords())
+        if (Lower(r.username) == Lower(username)) { out = r; return true; }
+    return false;
+}
+
+std::string UserStore::Line(const Record& r) {
+    std::string s = "user " + r.username + " " + std::to_string(r.iterations) + " " + r.salt + " " + r.hash;
+    if (!r.codeHash.empty()) s += " " + r.codeSalt + " " + r.codeHash;
+    return s;
+}
+
+bool UserStore::WriteRecord(const Record& r) const {
+    std::vector<std::string> lines;
+    {
+        std::ifstream in(root + "users.txt");
+        std::string line;
+        while (std::getline(in, line)) lines.push_back(line);
+    }
+    if (r.line >= lines.size()) return false;
+    lines[r.line] = Line(r);
+    // Write a new file and swap it in, so a crash can't leave half a file.
+    std::string tmp = root + "users.txt.tmp";
+    {
+        std::ofstream out(tmp, std::ios::trunc);
+        for (const std::string& l : lines) out << l << "\n";
+        out.flush();
+        if (!out) return false;
+    }
+    std::error_code ec;
+    fs::rename(tmp, root + "users.txt", ec);
+    return !ec;
 }
 
 AuthResult UserStore::Register(const std::string& username, const std::string& password) const {
@@ -211,17 +269,24 @@ AuthResult UserStore::Register(const std::string& username, const std::string& p
     fs::create_directories(UserDir(username), ec);
     if (ec) { res.error = "Could not create your data folder: " + ec.message(); return res; }
 
-    std::string salt = RandomSalt();
-    std::string hash = Pbkdf2Hex(password, salt, iterations, 32);
+    Record r;
+    r.username = username;
+    r.iterations = iterations;
+    r.salt = RandomSalt();
+    r.hash = Pbkdf2Hex(password, r.salt, iterations, 32);
+    std::string code = NewRecoveryCode();
+    r.codeSalt = RandomSalt();
+    r.codeHash = Pbkdf2Hex(NormalizeRecoveryCode(code), r.codeSalt, iterations, 32);
     // Appending can't damage the accounts that are already in the file.
     std::ofstream out(root + "users.txt", std::ios::app);
-    out << "user " << username << " " << iterations << " " << salt << " " << hash << "\n";
+    out << Line(r) << "\n";
     out.flush();
     if (!out) { res.error = "Could not save your account. Is this folder read-only?"; return res; }
 
     res.ok = true;
     res.username = username;
     res.firstAccount = records.empty();
+    res.recoveryCode = code;
     return res;
 }
 
@@ -237,6 +302,53 @@ AuthResult UserStore::Login(const std::string& username, const std::string& pass
         break;
     }
     res.error = "Incorrect username or password";
+    return res;
+}
+
+AuthResult UserStore::ResetPassword(const std::string& username, const std::string& code,
+                                    const std::string& newPassword) const {
+    AuthResult res;
+    res.error = ValidatePassword(newPassword);
+    if (!res.error.empty()) return res;
+    Record r;
+    bool found = FindRecord(username, r);
+    std::string given = NormalizeRecoveryCode(code);
+    // The same message for a wrong name or a wrong code, as for logging in.
+    if (!found || r.codeHash.empty() || given.empty() ||
+        !SameText(Pbkdf2Hex(given, r.codeSalt, r.iterations, 32), r.codeHash)) {
+        res.error = found && r.codeHash.empty() ? "This account has no recovery code yet"
+                                                : "Incorrect username or recovery code";
+        return res;
+    }
+    std::string newCode = NewRecoveryCode();
+    r.iterations = iterations;
+    r.salt = RandomSalt();
+    r.hash = Pbkdf2Hex(newPassword, r.salt, iterations, 32);
+    r.codeSalt = RandomSalt();
+    r.codeHash = Pbkdf2Hex(NormalizeRecoveryCode(newCode), r.codeSalt, iterations, 32);
+    if (!WriteRecord(r)) { res.error = "Could not save the new password. Is this folder read-only?"; return res; }
+    res.ok = true;
+    res.username = r.username;
+    res.recoveryCode = newCode;
+    return res;
+}
+
+bool UserStore::HasRecoveryCode(const std::string& username) const {
+    Record r;
+    return FindRecord(username, r) && !r.codeHash.empty();
+}
+
+AuthResult UserStore::CreateRecoveryCode(const std::string& username) const {
+    AuthResult res;
+    Record r;
+    if (!FindRecord(username, r)) { res.error = "No such account"; return res; }
+    std::string code = NewRecoveryCode();
+    r.codeSalt = RandomSalt();
+    r.codeHash = Pbkdf2Hex(NormalizeRecoveryCode(code), r.codeSalt, r.iterations, 32);
+    if (!WriteRecord(r)) { res.error = "Could not save the recovery code. Is this folder read-only?"; return res; }
+    res.ok = true;
+    res.username = r.username;
+    res.recoveryCode = code;
     return res;
 }
 

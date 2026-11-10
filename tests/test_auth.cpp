@@ -132,6 +132,58 @@ int main() {
         CHECK(!fs::exists(store.UserDir("bob") + "segfault_progress.txt"));
     }
 
+    printf("[recovery codes]\n");
+    {
+        std::string a = auth::NewRecoveryCode(), b = auth::NewRecoveryCode();
+        CHECK(a.size() == 14 && a[4] == '-' && a[9] == '-' && a != b);
+        CHECK(a.find_first_of("01OILU") == std::string::npos);
+        CHECK(auth::NormalizeRecoveryCode(" abcd-efgh jkmn ") == "ABCDEFGHJKMN");
+
+        auth::AuthResult r = store.Register("frank", "first password");
+        CHECK(r.ok && r.recoveryCode.size() == 14);
+        CHECK(store.HasRecoveryCode("FRANK"));
+        CHECK(readFile(root + "/users.txt").find(r.recoveryCode) == std::string::npos);  // only a hash
+        std::string code = r.recoveryCode;
+
+        CHECK(!store.ResetPassword("frank", "AAAA-AAAA-AAAA", "second password").ok);    // wrong code
+        CHECK(!store.ResetPassword("nobody", code, "second password").ok);              // wrong name
+        CHECK(!store.ResetPassword("frank", code, "short").ok);                         // weak password
+        CHECK(!store.ResetPassword("frank", "", "second password").ok);
+        CHECK(store.Login("frank", "first password").ok);                               // nothing changed yet
+
+        std::string typed = auth::NormalizeRecoveryCode(code);                          // typed without dashes,
+        for (char& c : typed) c = (char)std::tolower((unsigned char)c);                 // in lowercase
+        auth::AuthResult reset = store.ResetPassword("Frank", typed, "second password");
+        CHECK(reset.ok && reset.username == "frank" && !reset.recoveryCode.empty() && reset.recoveryCode != code);
+        CHECK(!store.Login("frank", "first password").ok);
+        CHECK(store.Login("frank", "second password").ok);
+        CHECK(!store.ResetPassword("frank", code, "third password").ok);                // a code works once
+        CHECK(store.ResetPassword("frank", reset.recoveryCode, "third password").ok);    // the new one works
+        CHECK(store.Login("frank", "third password").ok);
+
+        // the other accounts and the damaged lines are untouched by the rewrite
+        CHECK(store.Login("Alice", "correct horse").ok && store.Login("erin", "password123").ok);
+        CHECK(readFile(root + "/users.txt").find("garbage line") != std::string::npos);
+        CHECK(!fs::exists(root + "/users.txt.tmp"));
+    }
+
+    printf("[accounts from before recovery codes]\n");
+    {
+        // a line in the old format, as written before recovery codes existed
+        { std::ofstream out(root + "/users.txt", std::ios::app);
+          out << "user Oldie " << fast << " 00ff " << auth::Pbkdf2Hex("old password", "00ff", fast, 32) << "\n"; }
+        CHECK(store.Login("oldie", "old password").ok);
+        CHECK(!store.HasRecoveryCode("Oldie"));
+        auth::AuthResult none = store.ResetPassword("Oldie", "ABCD-EFGH-JKMN", "new password!");
+        CHECK(!none.ok && none.error.find("no recovery code") != std::string::npos);
+        auth::AuthResult made = store.CreateRecoveryCode("Oldie");
+        CHECK(made.ok && store.HasRecoveryCode("oldie"));
+        CHECK(store.Login("Oldie", "old password").ok);                                 // password kept
+        CHECK(store.ResetPassword("oldie", made.recoveryCode, "new password!").ok);
+        CHECK(store.Login("Oldie", "new password!").ok);
+        CHECK(!store.CreateRecoveryCode("nobody").ok);
+    }
+
     fs::remove_all(base, ec);
     printf("\n%d passed, %d failed\n", passed, failed);
     return failed == 0 ? 0 : 1;
