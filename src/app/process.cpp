@@ -58,7 +58,7 @@ static std::string QuoteArg(const std::string& a) {
 }
 
 ProcResult RunProcess(const std::vector<std::string>& args, const std::string& workDir, int timeoutMs,
-                      const std::vector<std::string>* env) {
+                      const std::vector<std::string>* env, const std::string& stdinFile) {
     ProcResult r;
     if (args.empty()) return r;
     auto t0 = std::chrono::steady_clock::now();
@@ -67,7 +67,7 @@ ProcResult RunProcess(const std::vector<std::string>& args, const std::string& w
     HANDLE readPipe = nullptr, writePipe = nullptr;
     if (!CreatePipe(&readPipe, &writePipe, &sa, 0)) return r;
     SetHandleInformation(readPipe, HANDLE_FLAG_INHERIT, 0);
-    HANDLE nulIn = CreateFileA("NUL", GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, &sa, OPEN_EXISTING, 0, nullptr);
+    HANDLE nulIn = CreateFileA(stdinFile.empty() ? "NUL" : stdinFile.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, &sa, OPEN_EXISTING, 0, nullptr);
 
     std::string cmd;
     for (size_t i = 0; i < args.size(); i++) cmd += (i ? " " : "") + QuoteArg(args[i]);
@@ -185,7 +185,7 @@ std::vector<std::string> CaptureBatchEnvironment(const std::string& batchFile) {
 extern char** environ;
 
 ProcResult RunProcess(const std::vector<std::string>& args, const std::string& workDir, int timeoutMs,
-                      const std::vector<std::string>* env) {
+                      const std::vector<std::string>* env, const std::string& stdinFile) {
     ProcResult r;
     if (args.empty()) return r;
     auto t0 = std::chrono::steady_clock::now();
@@ -208,7 +208,7 @@ ProcResult RunProcess(const std::vector<std::string>& args, const std::string& w
         dup2(fds[1], 2);
         close(fds[0]);
         close(fds[1]);
-        int devnull = open("/dev/null", O_RDONLY);
+        int devnull = open(stdinFile.empty() ? "/dev/null" : stdinFile.c_str(), O_RDONLY);
         if (devnull >= 0) dup2(devnull, 0);
         if (!workDir.empty() && chdir(workDir.c_str()) != 0) _exit(127);
         if (env) environ = envp.data();

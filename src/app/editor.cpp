@@ -401,7 +401,8 @@ void CodeEditor::HandleKeys(bool readOnly, float viewH) {
 
     // The popup follows the word being typed; anything else closes it.
     bool force = ctrl && IsKeyPressed(KEY_SPACE);
-    if (force || typedWord || (compOpen && (erased || typedOther))) UpdateCompletion(force);
+    if (!completion) compOpen = false;
+    else if (force || typedWord || (compOpen && (erased || typedOther))) UpdateCompletion(force);
     else if (accepted || cy != startY || cx != startX) compOpen = false;
 }
 
@@ -604,7 +605,8 @@ void CodeEditor::Frame(Rectangle r, int id, bool readOnly) {
     }
     for (int i = first; i <= last; i++) {
         float y = text.y + i * lineH - scrollY;
-        CodeLine(text.x - scrollX, y + (lineH - fs) / 2, lines[i], fs);
+        if (plain) ui::Text(lines[i], text.x - scrollX, y + (lineH - fs) / 2, fs, ui::col::synText, ui::F_MONO);
+        else CodeLine(text.x - scrollX, y + (lineH - fs) / 2, lines[i], fs);
     }
     if (focused && !readOnly && std::fmod(blink, 1.0f) < 0.6f) {
         float y = text.y + cy * lineH - scrollY;

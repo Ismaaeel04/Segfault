@@ -18,8 +18,9 @@ struct ProcResult {
 
 // args[0] is the program (searched in PATH if it has no directory).
 // env: optional full environment ("KEY=VALUE" entries) for the child.
+// stdinFile: a file the child reads as its standard input ("" = nothing).
 ProcResult RunProcess(const std::vector<std::string>& args, const std::string& workDir, int timeoutMs,
-                      const std::vector<std::string>* env = nullptr);
+                      const std::vector<std::string>* env = nullptr, const std::string& stdinFile = "");
 
 // Captures the environment after running a Windows batch file (vcvars64.bat).
 std::vector<std::string> CaptureBatchEnvironment(const std::string& batchFile);

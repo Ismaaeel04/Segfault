@@ -64,4 +64,16 @@ bool PickImage(void* ownerWindow, std::string& utf8Path) {
 #endif
 }
 
+void FlashWindow(void* window) {
+#ifdef _WIN32
+    FLASHWINFO f = {};
+    f.cbSize = sizeof(f);
+    f.hwnd = (HWND)window;
+    f.dwFlags = FLASHW_ALL | FLASHW_TIMERNOFG;
+    ::FlashWindowEx(&f);
+#else
+    (void)window;
+#endif
+}
+
 } // namespace files

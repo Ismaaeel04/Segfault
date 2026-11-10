@@ -86,6 +86,9 @@ private:
         if (Chip(dx, y, "Any", filterDiff < 0, col::accent)) filterDiff = -1;
         for (int d = 0; d < 3; d++) if (Chip(dx, y, DifficultyName(d), filterDiff == d, DifficultyColor(d))) filterDiff = filterDiff == d ? -1 : d;
         CompilerChip({1256 - 300, y, 300, 34});
+        // free code, outside the problems
+        if (Button({1256 - 300 - 12 - 154, y, 154, 34}, "SegFault Editor", BTN_DEFAULT, true, 13.5f))
+            app.Open(SceneId::Editor, "", "");
 
         // table
         Rectangle tbl = {24, y + 48, 1232, 784 - (y + 48)};

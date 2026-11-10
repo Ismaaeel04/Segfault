@@ -79,5 +79,26 @@ private:
     std::thread worker;
 };
 
+// ---- free code (the Scratchpad): no tests, just compile and run ----------
+// fileName is shown in error messages ("hello.cpp:3: error ..."); a name ending
+// in ".c" is compiled as C. stdinText is what the program reads from cin/scanf.
+// Status: Accepted (it ran), CompileError, RuntimeError (crash or exit code
+// other than 0), TimeLimit (5 s), NoCompiler, NeedsCpp.
+RunReport RunFree(const std::string& fileName, const std::string& code, const std::string& stdinText, const Compiler* c);
+std::string ExitCodeText(int exitCode);   // "Segmentation fault", "exit code 3", ...
+
+class FreeRunJob {
+public:
+    ~FreeRunJob();
+    void Start(const std::string& fileName, const std::string& code, const std::string& stdinText);
+    bool Busy() const { return state && !state->done.load(); }
+    bool Ready() const { return state && state->done.load(); }
+    RunReport Take();
+private:
+    struct State { std::atomic<bool> done{false}; RunReport report; };
+    std::shared_ptr<State> state;
+    std::thread worker;
+};
+
 // Full source sent to the compiler (exposed for the self test / debugging).
 std::string BuildSource(const Problem& p, const std::string& code, bool asCpp);

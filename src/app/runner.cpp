@@ -8,6 +8,7 @@
 #include <cctype>
 #include <chrono>
 #include <cstdio>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <mutex>
@@ -486,4 +487,158 @@ float RunJob::Elapsed() const {
     if (!state) return 0;
     double now = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
     return (float)(now - state->started);
+}
+
+// ========================================================= free code ======
+std::string ExitCodeText(int code) {
+    unsigned u = (unsigned)code;
+    switch (u) {
+        case 0xC0000005u: return "Segmentation fault (access violation)";
+        case 0xC00000FDu: return "Stack overflow (infinite recursion?)";
+        case 0xC0000094u: return "Division by zero";
+        case 0xC0000409u: return "Aborted (buffer overrun or abort())";
+        case 0xC000001Du: return "Illegal instruction";
+        case 0xC0000374u: return "Heap corruption (double free or a bad delete?)";
+        case 3u:          return "Aborted (assert or abort())";
+    }
+    if (u >= 0xC0000000u) { char b[40]; std::snprintf(b, sizeof(b), "Crashed (0x%08X)", u); return b; }
+#ifndef _WIN32
+    if (code == 139) return "Segmentation fault";
+    if (code == 134) return "Aborted";
+#endif
+    return "exit code " + std::to_string(code);
+}
+
+RunReport RunFree(const std::string& fileName, const std::string& code, const std::string& stdinText, const Compiler* c) {
+    RunReport rep;
+    if (!c) { rep.status = RunReport::NoCompiler; return rep; }
+    rep.compilerLabel = c->label;
+    bool isC = fileName.size() > 2 && fileName.compare(fileName.size() - 2, 2, ".c") == 0;
+    if (!isC && !c->cpp) {
+        rep.status = RunReport::NeedsCpp;
+        rep.compileLog = "This is a C++ file and the built-in TinyCC compiler only understands C.\n"
+                         "Make a .c file, or install Visual Studio (Desktop development with C++) or g++.";
+        return rep;
+    }
+    std::string src;   // a plain name for the temporary copy
+    for (char ch : fileName) src += (std::isalnum((unsigned char)ch) || ch == '_' || ch == '-' || ch == '.') ? ch : '_';
+    if (src.empty() || src[0] == '.') src = isC ? "main.c" : "main.cpp";
+
+    static std::atomic<int> counter{0};
+    std::error_code ec;
+    fs::path dir = fs::temp_directory_path(ec) / ("segfault-free-" + std::to_string((long long)std::chrono::steady_clock::now().time_since_epoch().count() % 1000000007) + "-" + std::to_string(counter++));
+    fs::create_directories(dir, ec);
+#ifdef _WIN32
+    std::string exeName = "prog.exe";
+#else
+    std::string exeName = "prog";
+#endif
+    { std::ofstream f(dir / src, std::ios::binary); f << code; if (!code.empty() && code.back() != '\n') f << "\n"; }
+    std::string inFile;
+    if (!stdinText.empty()) {
+        std::ofstream f(dir / "input.txt", std::ios::binary);
+        f << stdinText;
+        if (stdinText.back() != '\n') f << "\n";
+        inFile = (dir / "input.txt").string();
+    }
+
+    std::vector<std::string> args;
+    int compileTimeout = 60000;
+    switch (c->kind) {
+        case Backend::GCC:
+        case Backend::Clang:
+            if (isC) args = {c->exe, "-x", "c", "-std=c11", "-O1", "-Wall", "-fdiagnostics-color=never", "-o", exeName, src};
+            else args = {c->exe, "-std=c++17", "-O1", "-Wall", "-fdiagnostics-color=never", "-o", exeName, src};
+#ifdef _WIN32
+            args.insert(args.begin() + 1, {"-static-libgcc", "-static-libstdc++"});
+#endif
+            break;
+        case Backend::MSVC:
+            if (isC) args = {c->exe, "/nologo", "/W3", "/Fe:" + exeName, src};
+            else args = {c->exe, "/nologo", "/EHsc", "/std:c++17", "/W3", "/Fe:" + exeName, src};
+            break;
+        case Backend::TCC:
+            args = {c->exe, "-Wall", "-o", exeName, src};
+            compileTimeout = 20000;
+            break;
+    }
+    ProcResult cr = RunProcess(args, dir.string(), compileTimeout, c->hasEnv ? &c->env : nullptr);
+    rep.compileMs = cr.ms;
+    // tidy the compiler's messages: no temp paths, no file-name echo (MSVC)
+    auto tidy = [&](const std::string& log) {
+        std::string out;
+        for (std::string l : Split(log, '\n')) {
+            if (!l.empty() && l.back() == '\r') l.pop_back();
+            if (l == src || l.empty()) continue;
+            out += l + "\n";
+        }
+        std::string wd = dir.string();
+        for (int pass = 0; pass < 2; pass++) {
+            size_t pos;
+            while (!wd.empty() && (pos = out.find(wd)) != std::string::npos) {
+                size_t end = pos + wd.size();
+                if (end < out.size() && (out[end] == '/' || out[end] == '\\')) end++;
+                out.erase(pos, end - pos);
+            }
+            for (auto& ch : wd) ch = ch == '\\' ? '/' : ch == '/' ? '\\' : ch;
+        }
+        return out;
+    };
+    bool built = cr.started && cr.exitCode == 0 && fs::exists(dir / exeName, ec);
+    if (!built) {
+        rep.status = RunReport::CompileError;
+        rep.compileLog = cr.started ? tidy(cr.output) : "Could not start the compiler: " + c->exe;
+        if (cr.timedOut) rep.compileLog = "The compiler took too long.";
+        std::string esc;
+        for (char ch : src) { if (std::strchr(".^$|()[]{}*+?\\", ch)) esc += '\\'; esc += ch; }
+        std::regex re(esc + "[:(]([0-9]+)");
+        std::string log = rep.compileLog;
+        for (auto it = std::sregex_iterator(log.begin(), log.end(), re); it != std::sregex_iterator(); ++it) {
+            int ln = std::stoi((*it)[1].str());
+            if (std::find(rep.errorLines.begin(), rep.errorLines.end(), ln) == rep.errorLines.end()) rep.errorLines.push_back(ln);
+        }
+        fs::remove_all(dir, ec);
+        return rep;
+    }
+    rep.compileLog = tidy(cr.output);   // warnings, if any
+
+    ProcResult rr = RunProcess({(dir / exeName).string()}, dir.string(), 5000, nullptr, inFile);
+    rep.runMs = rr.ms;
+    rep.exitCode = rr.exitCode;
+    fs::remove_all(dir, ec);
+    std::string out;
+    out.reserve(rr.output.size());
+    for (size_t i = 0; i < rr.output.size(); i++)
+        if (!(rr.output[i] == '\r' && i + 1 < rr.output.size() && rr.output[i + 1] == '\n')) out += rr.output[i];
+    if (rr.outputTruncated) out += "\n... (output cut: too much)";
+    rep.stdoutText = out;
+    if (rr.timedOut) rep.status = RunReport::TimeLimit;
+    else if (!rr.started || rr.exitCode != 0) rep.status = RunReport::RuntimeError;
+    else rep.status = RunReport::Accepted;
+    return rep;
+}
+
+FreeRunJob::~FreeRunJob() {
+    if (worker.joinable()) worker.join();
+}
+
+void FreeRunJob::Start(const std::string& fileName, const std::string& code, const std::string& stdinText) {
+    if (worker.joinable()) worker.join();
+    state = std::make_shared<State>();
+    std::shared_ptr<State> st = state;
+    const Compiler* active = runner::Active();
+    Compiler comp = active ? *active : Compiler{Backend::GCC, "", "", true, {}, false};
+    bool has = active != nullptr;
+    worker = std::thread([st, fileName, code, stdinText, comp, has]() {
+        st->report = RunFree(fileName, code, stdinText, has ? &comp : nullptr);
+        st->done = true;
+    });
+}
+
+RunReport FreeRunJob::Take() {
+    RunReport r;
+    if (state && state->done) r = state->report;
+    if (worker.joinable()) worker.join();
+    state.reset();
+    return r;
 }

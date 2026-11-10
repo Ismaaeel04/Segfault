@@ -17,4 +17,8 @@ bool ReadAll(const std::string& utf8Path, std::vector<unsigned char>& out, size_
 // when the student picked one; always false where there is no such window.
 bool PickImage(void* ownerWindow, std::string& utf8Path);
 
+// Flashes the window's taskbar button until it is brought to the front
+// (the Focus timer uses it when a session ends). Does nothing elsewhere.
+void FlashWindow(void* window);
+
 } // namespace files

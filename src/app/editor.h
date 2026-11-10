@@ -19,6 +19,8 @@ public:
     bool TakeChanged() { bool c = changed; changed = false; return c; }
     void Focus(int id);
     float fontSize = 16;
+    bool completion = true;      // the autocompletion popup
+    bool plain = false;          // no syntax colours (program input)
 
 private:
     struct Snapshot { std::vector<std::string> lines; int cy, cx; };
