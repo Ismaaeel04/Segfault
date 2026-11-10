@@ -13,10 +13,12 @@
 #include "trail.h"
 #include "avatar.h"
 #include "cursor.h"
+#include "focus.h"
 #include "runner.h"
 #include "theme.h"
 #include "ui.h"
 #include "content/content.h"
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -41,6 +43,9 @@ static void CreateScenes() {
     gScenes[(int)SceneId::Login].reset(CreateLoginScene());
     gScenes[(int)SceneId::Intro].reset(CreateIntroScene());
     gScenes[(int)SceneId::Roadmap].reset(CreateRoadmapScene());
+    gScenes[(int)SceneId::Desktop].reset(CreateDesktopScene());
+    gScenes[(int)SceneId::Editor].reset(CreateEditorScene());
+    gScenes[(int)SceneId::Focus].reset(CreateFocusScene());
     gScenes[(int)SceneId::Leaderboard].reset(CreateLeaderboardScene());
     gScenes[(int)SceneId::Profile].reset(CreateProfileScene());
 }
@@ -75,6 +80,28 @@ static Color Flow(float x, float t) {
     float u = std::fmod(x / W * 1.2f + t * 0.06f, 1.0f) * 3;
     int k = (int)u;
     return Mix(cycle[k], cycle[k + 1], u - k);
+}
+
+// While the Focus timer runs: its time, right-aligned at `right`. Opens Focus.
+static void FocusPill(float right) {
+    if (!focus::Active() || app.current == SceneId::Focus) return;
+    const bool work = focus::CurrentPhase() == focus::WORK;
+    const Color c = work ? col::accent : col::success;
+    std::string s = focus::Clock(focus::Remaining());
+    float w = Measure(s, 14, F_MONOBOLD).x + 44;
+    Rectangle r = {right - w, 15, w, 34};
+    bool hover = InputEnabled() && MouseIn(r);
+    RoundRect(r, 17, hover ? Mix(col::panel, c, 0.22f) : Mix(col::panel, c, 0.12f));
+    RoundRectLines(r, 17, 1, Alpha(c, 0.45f));
+    // a little ring with the time gone
+    Vector2 m = {r.x + 18, r.y + 17};
+    float frac = std::fmin(1.0f, 1 - focus::Remaining() / focus::Length());
+    DrawRing(m, 5.5f, 8, 0, 360, 24, Alpha(c, 0.25f));
+    if (frac > 0) DrawRing(m, 5.5f, 8, -90, -90 + 360 * frac, 24, c);
+    if (!focus::Running()) { DrawRectangleRec({m.x - 2.5f, m.y - 3, 1.8f, 6}, col::text); DrawRectangleRec({m.x + 0.7f, m.y - 3, 1.8f, 6}, col::text); }
+    Text(s, r.x + 32, 24, 14, col::heading, F_MONOBOLD);
+    if (hover) WantHand();
+    if (Clicked(r)) app.Open(SceneId::Focus, "", app.currentParam);
 }
 
 static bool TopBar(Scene* scene) {
@@ -119,7 +146,7 @@ static bool TopBar(Scene* scene) {
     hot += ((logoHover ? 1.0f : 0.0f) - hot) * std::fmin(1.0f, dt * 10);
     DrawLogo(logo, t, hot);
     if (logoHover) WantHand();
-    if (!login && !home && Clicked(logo)) app.Go(SceneId::Home);   // the logo is always the way home
+    if (!login && !home && Clicked(logo)) app.Go(app.user.empty() ? SceneId::Desktop : SceneId::Home);   // the logo is always the way home
 
     float tx = logo.x + logo.width + 12;
     if (home || login) {
@@ -130,14 +157,16 @@ static bool TopBar(Scene* scene) {
         float cx = tx + Measure("SegFault", 17, F_DISPLAY).x + 14;
         DrawLineEx({cx - 2, 26}, {cx + 3, 32}, 2, col::faint);
         DrawLineEx({cx + 3, 32}, {cx - 2, 38}, 2, col::faint);
-        Text(Ellipsize(scene->Title(), 19, F_HEAVY, W - 252 - 112 - 24 - (cx + 16)), cx + 16, 20, 19, col::heading, F_HEAVY);
+        float pillW = focus::Active() && app.current != SceneId::Focus ? 112 : 0;
+        Text(Ellipsize(scene->Title(), 19, F_HEAVY, W - 252 - 112 - 24 - pillW - (cx + 16)), cx + 16, 20, 19, col::heading, F_HEAVY);
     }
 
     // ---- right
-    if (login) { ThemeButton({W - 124, 15, 100, 34}); return false; }
+    if (login) { ThemeButton({W - 124, 15, 100, 34}); FocusPill(W - 124 - 12); return false; }
     const Progress& p = app.progress;
     float bx = W - 252;
     ThemeButton({bx - 112, 15, 100, 34});
+    if (!home) FocusPill(bx - 112 - 12);
     // Only on Home, so nobody logs out by accident in the middle of an exam.
     if (home && !app.user.empty()) {
         if (Button({bx - 208, 15, 88, 34}, "Log out", BTN_GHOST, true, 13.5f)) app.signOutRequested = true;
@@ -149,7 +178,8 @@ static bool TopBar(Scene* scene) {
         avatar::Draw({name.x + 6, name.y + 5, 24, 24}, app.user, app.progress.avatarColour);
         Text(app.user, name.x + 36, 23, 14.5f, hover ? col::heading : col::text, F_BOLD);
         if (Clicked(name)) app.Go(SceneId::Profile, "");
-    }
+        FocusPill(name.x - 12);
+    } else if (home) FocusPill(bx - 112 - 12);
 
     // level and XP: the bar fills smoothly, with a glint running along it
     static float shown = -1;
@@ -223,6 +253,29 @@ static int SelfTest(bool quick) {
             checked++;
         }
         printf("  %s: %d problems checked\n", c.label.c_str(), checked);
+        // SegFault Editor: free code with input, errors, crashes and endless loops
+        {
+            auto expect = [&](const char* what, const RunReport& r, RunReport::Status st, const std::string& out) {
+                if (r.status != st || (!out.empty() && r.stdoutText.find(out) == std::string::npos)) {
+                    fail("[" + c.label + "] editor " + what + ": " + StatusText(r.status) + " out=[" + r.stdoutText + "]");
+                    if (!r.compileLog.empty()) printf("%s\n", r.compileLog.substr(0, 800).c_str());
+                }
+            };
+            if (c.cpp) {
+                expect("cin", RunFree("echo.cpp", "#include <iostream>\nint main(){int a,b;std::cin>>a>>b;std::cout<<a+b<<\"\\n\";}\n", "2 40", &c),
+                       RunReport::Accepted, "42");
+                RunReport e = RunFree("bad.cpp", "int main() {\n  int x = ;\n}\n", "", &c);
+                expect("compile error", e, RunReport::CompileError, "");
+                if (std::find(e.errorLines.begin(), e.errorLines.end(), 2) == e.errorLines.end()) fail("[" + c.label + "] editor: error line 2 not found");
+                if (e.compileLog.find("bad.cpp") == std::string::npos) fail("[" + c.label + "] editor: log doesn't name bad.cpp");
+            }
+            expect("scanf", RunFree("sum.c", "#include <stdio.h>\nint main(void){int a,b;scanf(\"%d %d\",&a,&b);printf(\"%d\\n\",a*b);return 0;}\n", "6 7", &c),
+                   RunReport::Accepted, "42");
+            RunReport crash = RunFree("crash.c", "#include <stdio.h>\nint main(void){int*p=0;printf(\"before\\n\");fflush(stdout);*p=1;return 0;}\n", "", &c);
+            expect("segfault", crash, RunReport::RuntimeError, "before");
+            if (ExitCodeText(crash.exitCode).find("Segmentation") == std::string::npos) fail("editor: crash text " + ExitCodeText(crash.exitCode));
+            if (!quick) expect("loop", RunFree("loop.c", "int main(void){volatile int x=0;for(;;)x++;}\n", "", &c), RunReport::TimeLimit, "");
+        }
         if (quick) break;
     }
     for (const Lesson& l : Lessons()) for (const Block& b : l.blocks) {
@@ -363,7 +416,7 @@ int main(int argc, char** argv) {
     float fade = 1;                       // scene switches fade in
     int frame = 0;
 
-    while (!WindowShouldClose()) {
+    while (!WindowShouldClose() && !app.quitRequested) {
         // ---- fit the virtual canvas into the window (pixel exact) ----------
         float sw = (float)GetScreenWidth(), sh = (float)GetScreenHeight();
         float rw = (float)GetRenderWidth(), rh = (float)GetRenderHeight();
@@ -415,7 +468,9 @@ int main(int argc, char** argv) {
         BeginMode2D(cam);
         ui::BeginFrame();
         Backdrop((float)GetTime());
-        const bool pickerWasOpen = app.themePickerOpen;
+        focus::Update();
+        const bool alertWasOpen = focus::AlertOpen();
+        const bool pickerWasOpen = app.themePickerOpen || alertWasOpen;
         if (pickerWasOpen) SetInputEnabled(false);
         scene->Frame(dt);
         if (fade > 0) {
@@ -423,10 +478,12 @@ int main(int argc, char** argv) {
             fade = std::fmax(0.0f, fade - dt * 7.0f);
         }
         SetInputEnabled(!pickerWasOpen);
-        bool back = app.current == SceneId::Intro ? false : TopBar(scene);
-        if (pickerWasOpen) ThemePicker();
+        // the boot screen and the desktop are full screen: no top bar
+        bool back = app.current == SceneId::Intro || app.current == SceneId::Desktop ? false : TopBar(scene);
+        if (app.themePickerOpen && !alertWasOpen) ThemePicker();
+        if (alertWasOpen) { SetInputEnabled(true); focus::DrawAlert(); }
         if ((back || (IsKeyPressed(KEY_ESCAPE) && !AnyTextFocused() && !pickerWasOpen)) && app.current != SceneId::Home && app.current != SceneId::Login &&
-            app.current != SceneId::Intro) {
+            app.current != SceneId::Intro && app.current != SceneId::Desktop) {
             if (app.hasReturn) {
                 SceneId to = app.returnScene;
                 std::string param = app.returnParam;
@@ -463,8 +520,9 @@ int main(int argc, char** argv) {
             // tour: a new screen every 12 frames, as a student clicking around would
             if (benchTour && frame % 12 == 0) {
                 static const SceneId tour[] = {SceneId::Home, SceneId::Study, SceneId::Practice, SceneId::Mock,
-                                               SceneId::Quiz, SceneId::Visualizer, SceneId::ListLab, SceneId::Grid, SceneId::Login};
-                int k = (frame / 12) % 9;
+                                               SceneId::Quiz, SceneId::Visualizer, SceneId::ListLab, SceneId::Grid, SceneId::Login,
+                                               SceneId::Desktop, SceneId::Editor, SceneId::Focus};
+                int k = (frame / 12) % 12;
                 app.Go(tour[k], tour[k] == SceneId::Practice && (frame / 108) % 2 ? "isLeapYear" : "");
                 if (frame / 12 % 4 == 3) app.themePickerOpen = !app.themePickerOpen;
             }

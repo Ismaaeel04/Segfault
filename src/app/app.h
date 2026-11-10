@@ -22,7 +22,7 @@ inline Color TopicColor(int s) { return SectionColor(s); }
 
 // ------------------------------------------------------------- scenes -----
 // New scenes go before Count: --shot selects a scene by its number.
-enum class SceneId { Home, Study, Practice, Mock, Quiz, Visualizer, ListLab, Grid, Login, Leaderboard, Profile, Intro, Roadmap, Count };
+enum class SceneId { Home, Study, Practice, Mock, Quiz, Visualizer, ListLab, Grid, Login, Leaderboard, Profile, Intro, Roadmap, Desktop, Editor, Focus, Count };
 
 class Scene {
 public:
@@ -44,6 +44,7 @@ struct Progress {
     bool trail = true;                   // the cursor trail
     bool customCursor = true;            // theme-coloured mouse cursor (false = OS cursor)
     std::set<std::string> days;          // days with XP earned ("2026-11-10"), for streaks
+    std::map<std::string, int> focusMinutes;   // minutes of finished Focus sessions per day
     std::string path;
 
     bool Has(const std::string& key) const { return done.count(key) > 0; }
@@ -77,6 +78,10 @@ struct App {
     std::string userDir;                  // that student's progress + saved code
     bool signOutRequested = false;        // handled by main between frames
     bool themePickerOpen = false;
+    bool bootToApp = false;               // skip the SegFault OS desktop (start menu option)
+    bool quitRequested = false;           // "Shut down" on the desktop
+    std::string examDate = "2026-11-20";  // the countdown on the desktop ("YYYY-MM-DD")
+    int focusWork = 25, focusBreak = 5;   // Focus timer lengths in minutes
     Progress progress;
     std::string consoleCapture;           // text printed by exam functions
 
@@ -138,6 +143,9 @@ namespace sources {
 Scene* CreateLoginScene();
 Scene* CreateIntroScene();
 Scene* CreateRoadmapScene();
+Scene* CreateDesktopScene();
+Scene* CreateEditorScene();
+Scene* CreateFocusScene();
 Scene* CreateLeaderboardScene();
 Scene* CreateProfileScene();
 Scene* CreateHomeScene();

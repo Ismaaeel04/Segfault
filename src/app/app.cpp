@@ -88,6 +88,7 @@ void Progress::Load(const std::string& file) {
         else if (key == "trail") in >> trail;
         else if (key == "cursor") in >> customCursor;
         else if (key == "day") { std::string v; in >> v; days.insert(v); }
+        else if (key == "focus") { std::string d; int m = 0; in >> d >> m; focusMinutes[d] = m; }
         else { std::string rest; std::getline(in, rest); }
     }
 }
@@ -105,6 +106,7 @@ void Progress::Save() const {
     for (int m : mistakes) out << "mistake " << m << "\n";
     for (auto& b : best) out << "best " << b.first << " " << b.second << "\n";
     for (auto& d : days) out << "day " << d << "\n";
+    for (auto& f : focusMinutes) out << "focus " << f.first << " " << f.second << "\n";
 }
 
 void Progress::Reset() {
@@ -188,6 +190,9 @@ void SaveAppSettings() {
     out << "theme " << themeId << "\n";
     out << "trail " << (app.progress.trail ? 1 : 0) << "\n";
     out << "cursor " << (app.progress.customCursor ? 1 : 0) << "\n";
+    out << "direct " << (app.bootToApp ? 1 : 0) << "\n";
+    out << "exam " << app.examDate << "\n";
+    out << "focus " << app.focusWork << " " << app.focusBreak << "\n";
     if (!app.user.empty()) out << "user " << app.user << "\n";
     if (!app.lastUser.empty()) out << "last_user " << app.lastUser << "\n";
     if (!runner::PreferredLabel().empty()) out << "compiler " << runner::PreferredLabel() << "\n";
@@ -211,6 +216,9 @@ void LoadLastTheme(bool restoreSession) {
         if (key == "theme") { std::string t; in >> t; ui::ApplyTheme(ui::ThemeIndex(t)); }
         else if (key == "trail") in >> app.progress.trail;
         else if (key == "cursor") in >> app.progress.customCursor;
+        else if (key == "direct") in >> app.bootToApp;
+        else if (key == "exam") in >> app.examDate;
+        else if (key == "focus") in >> app.focusWork >> app.focusBreak;
         else if (key == "user") in >> savedUser;
         else if (key == "last_user") in >> app.lastUser;
         else if (key == "compiler") {
@@ -243,7 +251,8 @@ void SignOut() {
     app.progress.trail = keepTrail;
     app.progress.customCursor = keepCursor;
     SaveAppSettings();
-    app.Go(SceneId::Login);
+    if (app.bootToApp) app.Go(SceneId::Login);
+    else app.Go(SceneId::Desktop, "login");
 }
 
 // ========================================================= saved code ======

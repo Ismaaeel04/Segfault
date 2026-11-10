@@ -23,8 +23,28 @@ The exams are about **writing code**, so the app is too. It has three main parts
 
 ## Student accounts
 
-The app opens with a short intro (the logo and a loading bar while it looks for a compiler;
-any key skips it), then the login screen. Each student registers with a username and password, and their
+The app starts like a small operating system, **SegFault OS**: a boot console lists what it
+loads (lessons, problems, the compiler it finds), then a desktop with three apps, a countdown
+to the exam, a taskbar and a clock. Double-click an icon to open it; logging out goes back to the
+desktop, and *Shut down* in the start menu closes the program. *Open SegFault at start-up* in the
+start menu skips the desktop; any key skips the boot screen. The apps:
+
+- **SegFault**: the lessons, problems, mock exams and quiz (login screen first).
+- **SegFault Editor**: your own `.c` and `.cpp` files, outside the problems. Make, open and
+  delete files, write anything and run it (Ctrl+Enter) with some input for `cin` / `scanf`.
+  The output panel shows what it printed, compile errors (marked in the editor), crashes
+  ("Segmentation fault") and programs stopped after 5 seconds. Files are saved as you type, in
+  `segfault_users/user_<name>/scratch/` (or `segfault_scratch/` when nobody is logged in). Also
+  on the Practice page.
+- **Focus**: a Pomodoro timer. 25 minutes of work, a 5 minute break, and 15 minutes after every
+  fourth session (the lengths can be changed). It keeps running on every screen, with its time
+  in the top bar; when a session ends it rings, flashes the taskbar button and says what comes
+  next. Finished minutes are kept per day and shown for the last week.
+
+The **exam countdown** turns from green to amber in the last week and to red in the last days,
+and glows on the day. The arrows that show on it move the date.
+
+Then the login screen. Each student registers with a username and password, and their
 XP, progress and saved code are kept separately, so several students can share one computer.
 Accounts live next to the executable:
 
