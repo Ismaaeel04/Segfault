@@ -346,15 +346,15 @@ int main(int argc, char** argv) {
     if (!InitFonts(app.resourceDir))
         TraceLog(LOG_WARNING, "Fonts not found in %s - using the default font", app.resourceDir.c_str());
     sources::Load(FindSolutionsDir(app.resourceDir));
-    runner::StartDetection(app.resourceDir);
     app.dataDir = GetApplicationDirectory();
-    LoadLastTheme();
+    LoadLastTheme(!shotFile);
+    runner::StartDetection(app.resourceDir);
     if (shotFile && argc >= 7) ApplyTheme(ThemeIndex(argv[6]));
     CreateScenes();
     if (!shotFile) SetLogoIcon();
 
     if (shotFile) app.Go((SceneId)shotScene, shotParam);
-    else app.Go(SceneId::Login);
+    else if (app.user.empty()) app.Go(SceneId::Login);
 
     RenderTexture2D canvas = {};
     float currentScale = -1;
@@ -446,7 +446,7 @@ int main(int argc, char** argv) {
                        {offX, offY, dw, dh}, {0, 0}, 0, WHITE);
         EndBlendMode();
         EndDrawing();
-        SetAppCursor(WantsIBeam() ? CURSOR_IBEAM : WantsHandCursor() ? CURSOR_HAND : CURSOR_ARROW);
+        SetAppCursor(WantsIBeam() ? CURSOR_IBEAM : WantsHandCursor() ? CURSOR_HAND : CURSOR_ARROW, app.progress.customCursor);
 
         frame++;
         if (bench) {
@@ -491,6 +491,10 @@ int main(int argc, char** argv) {
     }
 
     for (auto& s : gScenes) s.reset();
+    if (!shotFile) {
+        if (!app.user.empty()) app.progress.Save();
+        SaveAppSettings();
+    }
     avatar::ForgetAll();
     UnloadCursors();
     if (canvas.id) UnloadRenderTexture(canvas);

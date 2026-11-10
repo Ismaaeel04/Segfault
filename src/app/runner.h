@@ -33,6 +33,8 @@ namespace runner {
     const std::vector<Compiler>& Compilers();
     int ActiveIndex();
     void SetActive(int index);
+    void SetPreferredLabel(const std::string& label);
+    const std::string& PreferredLabel();
     const Compiler* Active();
 }
 

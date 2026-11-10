@@ -102,6 +102,7 @@ Vector2 HotSpot(CursorKind kind) {
 GLFWcursor* gCursors[CURSOR_COUNT] = {};
 int gBuiltTheme = -1, gBuiltSize = 0, gShown = -1;
 #endif
+int gSystemShown = -1;
 
 } // namespace
 
@@ -117,7 +118,16 @@ Image CursorImage(CursorKind kind, int size) {
     return c.img;
 }
 
-void SetAppCursor(CursorKind kind) {
+void SetAppCursor(CursorKind kind, bool custom) {
+    if (!custom) {
+        UnloadCursors();
+        if (gSystemShown != kind) {
+            SetMouseCursor(kind == CURSOR_HAND ? MOUSE_CURSOR_POINTING_HAND : kind == CURSOR_IBEAM ? MOUSE_CURSOR_IBEAM : MOUSE_CURSOR_DEFAULT);
+            gSystemShown = kind;
+        }
+        return;
+    }
+    gSystemShown = -1;
 #ifdef SEGFAULT_GLFW_CURSOR
     GLFWwindow* win = glfwGetCurrentContext();
     if (!win) return;
@@ -141,15 +151,15 @@ void SetAppCursor(CursorKind kind) {
         gShown = kind;
     }
 #else
-    static int shown = -1;
-    if (shown == kind) return;   // raylib makes a new cursor on every call
+    if (gSystemShown == kind) return;   // raylib makes a new cursor on every call
     SetMouseCursor(kind == CURSOR_HAND ? MOUSE_CURSOR_POINTING_HAND : kind == CURSOR_IBEAM ? MOUSE_CURSOR_IBEAM : MOUSE_CURSOR_DEFAULT);
-    shown = kind;
+    gSystemShown = kind;
 #endif
 }
 
 void UnloadCursors() {
 #ifdef SEGFAULT_GLFW_CURSOR
+    if (gBuiltTheme == -1 && gShown == -1) return;
     GLFWwindow* win = glfwGetCurrentContext();
     if (win) glfwSetCursor(win, nullptr);
     for (GLFWcursor*& c : gCursors) { if (c) glfwDestroyCursor(c); c = nullptr; }

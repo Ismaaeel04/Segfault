@@ -42,6 +42,7 @@ struct Progress {
     std::string theme;                   // theme id chosen by this student ("" = not chosen)
     int avatarColour = 0;                // avatar::Draw colour when there is no picture
     bool trail = true;                   // the cursor trail
+    bool customCursor = true;            // theme-coloured mouse cursor (false = OS cursor)
     std::string path;
 
     bool Has(const std::string& key) const { return done.count(key) > 0; }
@@ -71,6 +72,7 @@ struct App {
     std::string resourceDir;
     std::string dataDir;                  // folder that holds the accounts
     std::string user;                     // logged-in student ("" = nobody)
+    std::string lastUser;                 // last signed-in student (pre-fills Login)
     std::string userDir;                  // that student's progress + saved code
     bool signOutRequested = false;        // handled by main between frames
     bool themePickerOpen = false;
@@ -114,8 +116,9 @@ std::vector<LeaderRow> LoadLeaderboard();
 
 // Applies a theme and remembers it for this student and this computer.
 void SelectTheme(int index);
-void LoadLastTheme();   // the login screen uses whichever theme was used last
-void ThemePicker();     // scenes/theme_picker.cpp: draws the window, main opens it
+void LoadLastTheme(bool restoreSession = true);   // loads app settings (theme, cursor, trail, last account)
+void SaveAppSettings();                           // persists app-wide settings to segfault_settings.txt
+void ThemePicker();                               // scenes/theme_picker.cpp: draws the window, main opens it
 
 // Saved student code per problem (<userDir>/segfault_code/<id>.cpp)
 std::string LoadSavedCode(const std::string& key);
