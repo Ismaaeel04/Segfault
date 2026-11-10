@@ -35,6 +35,7 @@ bool RightClicked(Rectangle r);
 void SetInputEnabled(bool on);   // false while a modal is open
 bool InputEnabled();
 bool WantsHandCursor();
+void WantHand();                 // show the pointing hand this frame
 bool WantsIBeam();
 void WantIBeam();
 // keyboard focus for text boxes and the code editor
@@ -72,6 +73,9 @@ void GradientRoundRectV(Rectangle r, float radius, Color top, Color bottom);
 // inside the rounded corners (a clipped glow would spill into them).
 void PanelTint(Rectangle r, float radius, Color c, float strength);
 void SoftGlow(Vector2 center, float radius, Color c, float strength);
+// The Segfault logo: {*}, a block of C code with a pointer star inside. The
+// star turns slowly; hot (0-1) makes it glow and spin faster.
+void DrawLogo(Rectangle r, float time, float hot = 0);
 void Backdrop(float time);       // the soft background behind every screen
 void Arrow(Vector2 from, Vector2 to, Color c, float thick = 2.0f, float head = 10.0f);
 void CurvedArrow(Vector2 from, Vector2 ctrl, Vector2 to, Color c, float thick = 2.0f, float head = 10.0f);

@@ -67,42 +67,126 @@ static void ThemeButton(Rectangle r) {
     for (int i = 0; i < 3; i++) DrawCircleV({r.x + 13 + i * 6.5f, r.y + r.height / 2}, 4, dots[i]);
 }
 
+// Colours that flow along the line under the top bar.
+static Color Flow(float x, float t) {
+    const Color cycle[4] = {col::accent, col::accent2, col::pointer, col::accent};
+    float u = std::fmod(x / W * 1.2f + t * 0.06f, 1.0f) * 3;
+    int k = (int)u;
+    return Mix(cycle[k], cycle[k + 1], u - k);
+}
+
 static bool TopBar(Scene* scene) {
-    DrawRectangleRec({0, 0, W, 64}, col::bg2);
-    DrawRectangleGradientEx({0, 62.5f, W, 1.5f}, col::accent, col::accent, col::accent2, col::accent2);
-    bool back = false;
-    if (app.current == SceneId::Home || app.current == SceneId::Login) {
-        GradientRoundRect({24, 15, 34, 34}, 9, col::accent, Mix(col::accent, col::accent2, 0.7f));
-        RoundRect({33, 24, 16, 16}, 3, col::bg2);
-        DrawCircleV({41, 32}, 3.5f, col::pointer);
-        Text("Segfault", 70, 13, 22, col::heading, F_DISPLAY);
-        Text("Learn C & C++ by writing it", 71, 40, 13, col::dim, F_MEDIUM);
-    } else {
-        back = Button({20, 13, 104, 38}, app.hasReturn ? "<  Back" : "<  Home", BTN_GHOST, true, 15);
-        Text(scene->Title(), 142, 19, 21, col::heading, F_HEAVY);
+    const float t = (float)GetTime(), dt = std::fmin(GetFrameTime(), 0.05f), bh = 64;
+    const bool home = app.current == SceneId::Home, login = app.current == SceneId::Login;
+
+    // ---- background: a soft tint, two slow glows, a line of flowing colour
+    DrawRectangleGradientV(0, 0, (int)W, (int)bh, Mix(col::bg2, col::accent, 0.06f), col::bg2);
+    BeginClip({0, 0, W, bh});
+    SoftGlow({230 + std::sin(t * 0.31f) * 150, 16}, 250, col::accent, 0.11f);
+    SoftGlow({W - 380 + std::cos(t * 0.27f) * 170, 54}, 270, col::accent2, 0.08f);
+    EndClip();
+    const int segments = 24;
+    for (int i = 0; i < segments; i++) {
+        float x0 = W * i / segments, x1 = W * (i + 1) / segments;
+        DrawRectangleGradientEx({x0, bh - 1.5f, x1 - x0, 1.5f}, Flow(x0, t), Flow(x0, t), Flow(x1, t), Flow(x1, t));
     }
-    if (app.current == SceneId::Login) { ThemeButton({W - 124, 15, 100, 34}); return false; }
+    float sweep = std::fmod(t, 6.0f) / 1.8f;   // a glint runs along the line every 6 s
+    if (sweep < 1) {
+        float sx = -200 + sweep * (W + 400);
+        Color on = Alpha(WHITE, 0.75f), off = Alpha(WHITE, 0);
+        DrawRectangleGradientEx({sx - 110, bh - 2, 110, 2}, off, off, on, on);
+        DrawRectangleGradientEx({sx, bh - 2, 110, 2}, on, on, off, off);
+    }
+    DrawRectangleGradientV(0, (int)bh, (int)W, 10, Alpha(col::shadow, 0.14f), Alpha(col::shadow, 0));
+
+    // ---- left: back, logo, where you are
+    bool back = false;
+    float x = 22;
+    if (!home && !login) {
+        Rectangle bb = {20, 15, 34, 34};
+        back = Button(bb, "", BTN_GHOST, true, 14);
+        Vector2 cc = {bb.x + 16, bb.y + 17};
+        Color ch = MouseIn(bb) ? col::heading : col::text;
+        DrawLineEx({cc.x + 3, cc.y - 7}, {cc.x - 4, cc.y}, 2.4f, ch);
+        DrawLineEx({cc.x - 4, cc.y}, {cc.x + 3, cc.y + 7}, 2.4f, ch);
+        x = 64;
+    }
+    static float hot = 0;
+    Rectangle logo = {x, 15, 34, 34};
+    bool logoHover = !login && InputEnabled() && MouseIn(logo);
+    hot += ((logoHover ? 1.0f : 0.0f) - hot) * std::fmin(1.0f, dt * 10);
+    DrawLogo(logo, t, hot);
+    if (logoHover) WantHand();
+    if (!login && !home && Clicked(logo)) app.Go(SceneId::Home);   // the logo is always the way home
+
+    float tx = logo.x + logo.width + 12;
+    if (home || login) {
+        Text("Segfault", tx, 13, 22, col::heading, F_DISPLAY);
+        Text("Learn C & C++ by writing it", tx + 1, 40, 13, col::dim, F_MEDIUM);
+    } else {
+        Text("Segfault", tx, 22, 17, col::dim, F_DISPLAY);
+        float cx = tx + Measure("Segfault", 17, F_DISPLAY).x + 14;
+        DrawLineEx({cx - 2, 26}, {cx + 3, 32}, 2, col::faint);
+        DrawLineEx({cx + 3, 32}, {cx - 2, 38}, 2, col::faint);
+        Text(Ellipsize(scene->Title(), 19, F_HEAVY, W - 252 - 112 - 24 - (cx + 16)), cx + 16, 20, 19, col::heading, F_HEAVY);
+    }
+
+    // ---- right
+    if (login) { ThemeButton({W - 124, 15, 100, 34}); return false; }
     const Progress& p = app.progress;
     float bx = W - 252;
     ThemeButton({bx - 112, 15, 100, 34});
     // Only on Home, so nobody logs out by accident in the middle of an exam.
-    if (app.current == SceneId::Home && !app.user.empty()) {
+    if (home && !app.user.empty()) {
         if (Button({bx - 208, 15, 88, 34}, "Log out", BTN_GHOST, true, 13.5f)) app.signOutRequested = true;
         // the name opens the profile
         float nw = Measure(app.user, 14.5f, F_BOLD).x;
         Rectangle name = {bx - 220 - nw - 36, 15, nw + 44, 34};
         bool hover = MouseIn(name);
-        if (hover) RoundRect(name, 17, col::panelHi);
+        if (hover) { RoundRect(name, 17, col::panelHi); WantHand(); }
         avatar::Draw({name.x + 6, name.y + 5, 24, 24}, app.user, app.progress.avatarColour);
         Text(app.user, name.x + 36, 23, 14.5f, hover ? col::heading : col::text, F_BOLD);
         if (Clicked(name)) app.Go(SceneId::Profile, "");
     }
-    RoundRect({bx, 15, 228, 34}, 17, col::panel);
-    RoundRectLines({bx, 15, 228, 34}, 17, 1, Alpha(col::border, 0.7f));
+
+    // level and XP: the bar fills smoothly, with a glint running along it
+    static float shown = -1;
+    float target = p.LevelProgress();
+    if (shown < 0 || target < shown - 0.5f) shown = target;   // first frame, or a new level
+    shown += (target - shown) * std::fmin(1.0f, dt * 5);
+    Rectangle pill = {bx, 15, 228, 34};
+    RoundRect(pill, 17, col::panel);
+    RoundRectLines(pill, 17, 1, col::border);
     Badge(bx + 5, 20, "LV " + std::to_string(p.Level()), col::warn, 12.5f);
-    ProgressBar({bx + 70, 29, 92, 6}, p.LevelProgress(), col::accent2);
+    Rectangle bar = {bx + 70, 29, 92, 6};
+    ProgressBar(bar, shown, col::accent2);
+    float fill = std::fmax(bar.height, bar.width * shown);
+    if (shown > 0.02f) {
+        BeginClip({bar.x, bar.y, fill, bar.height});
+        float gx = bar.x - 30 + std::fmod(t * 45, fill + 90);
+        Color on = Alpha(WHITE, 0.55f), off = Alpha(WHITE, 0);
+        DrawRectangleGradientEx({gx - 18, bar.y, 18, bar.height}, off, off, on, on);
+        DrawRectangleGradientEx({gx, bar.y, 18, bar.height}, on, on, off, off);
+        EndClip();
+    }
     TextRight(std::to_string(p.xp) + " XP", bx + 216, 23, 14, col::text, F_BOLD);
     return back;
+}
+
+// The window and taskbar icon: the logo, drawn once at start-up.
+static void SetLogoIcon() {
+    const int size = 64;
+    RenderTexture2D rt = LoadRenderTexture(size, size);
+    BeginTextureMode(rt);
+    ClearBackground(BLANK);
+    DrawLogo({4, 4, size - 8.0f, size - 8.0f}, 0.4f, 0);
+    EndTextureMode();
+    Image icon = LoadImageFromTexture(rt.texture);
+    ImageFlipVertical(&icon);
+    ImageFormat(&icon, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
+    SetWindowIcon(icon);
+    UnloadImage(icon);
+    UnloadRenderTexture(rt);
 }
 
 // -------------------------------------------------------------- self test ---
@@ -267,6 +351,7 @@ int main(int argc, char** argv) {
     LoadLastTheme();
     if (shotFile && argc >= 7) ApplyTheme(ThemeIndex(argv[6]));
     CreateScenes();
+    if (!shotFile) SetLogoIcon();
 
     if (shotFile) app.Go((SceneId)shotScene, shotParam);
     else app.Go(SceneId::Login);

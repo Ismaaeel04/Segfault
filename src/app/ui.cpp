@@ -32,6 +32,7 @@ void SetScale(float s) { gScale = s; }
 float Scale() { return gScale; }
 void BeginFrame() { gHand = false; gIBeam = false; gClickConsumed = false; gInput = true; }
 bool WantsHandCursor() { return gHand; }
+void WantHand() { gHand = true; }
 bool WantsIBeam() { return gIBeam; }
 void WantIBeam() { gIBeam = true; }
 void SetInputEnabled(bool on) { gInput = on; }
@@ -295,6 +296,36 @@ void GradientRoundRectV(Rectangle r, float radius, Color top, Color bottom) {
 
 void PanelTint(Rectangle r, float radius, Color c, float strength) {
     GradientRoundRectV({r.x, r.y, r.width, r.height * 0.65f}, radius, Alpha(c, strength), Alpha(c, 0));
+}
+
+void DrawLogo(Rectangle r, float time, float hot) {
+    const float s = r.width, rad = s * 0.28f;
+    const Vector2 c = {r.x + s / 2, r.y + s / 2};
+    if (hot > 0.01f) SoftGlow(c, s * 1.15f, col::accent, 0.28f * hot);
+    Shadow(r, rad, 0.9f);
+    Color mid = Mix(col::accent, col::accent2, 0.4f);
+    GradientRoundRect(r, rad, col::accent, Mix(col::accent, col::accent2, 0.75f));
+    GradientRoundRectV({r.x, r.y, s, s * 0.55f}, rad, Alpha(WHITE, 0.24f), Alpha(WHITE, 0));   // sheen
+    Color ink = OnColor(mid);
+
+    // the braces of a C block
+    const float fs = s * 0.66f;
+    float bw = Measure("{", fs, F_MONOBOLD).x;
+    float ty = r.y + (s - fs) / 2 - s * 0.05f;
+    Text("{", r.x + s * 0.25f - bw / 2, ty, fs, Alpha(ink, 0.95f), F_MONOBOLD);
+    Text("}", r.x + s * 0.75f - bw / 2, ty, fs, Alpha(ink, 0.95f), F_MONOBOLD);
+
+    // the pointer star; orange like every pointer in the app, unless that
+    // would not stand out on this theme's colours
+    Color star = ContrastRatio(col::pointer, mid) >= 1.8f ? Mix(col::pointer, WHITE, 0.15f) : ink;
+    const float len = s * 0.15f, th = std::max(1.5f, s * 0.075f);
+    const float spin = time * (0.8f + 2.4f * hot);
+    for (int k = 0; k < 3; k++) {
+        float a = spin + k * 1.0472f;   // 60 degrees apart
+        Vector2 d = {std::cos(a) * len, std::sin(a) * len};
+        DrawLineEx({c.x - d.x, c.y - d.y}, {c.x + d.x, c.y + d.y}, th, star);
+    }
+    DrawCircleV(c, th * 0.6f, star);
 }
 
 void SoftGlow(Vector2 center, float radius, Color c, float strength) {

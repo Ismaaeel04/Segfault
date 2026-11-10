@@ -86,9 +86,7 @@ private:
         EndClip();
 
         float x = r.x + 40, y = r.y + 44;
-        RoundRect({x, y, 56, 56}, 15, WHITE);
-        RoundRect({x + 15, y + 15, 26, 26}, 5, left);
-        DrawCircleV({x + 28, y + 28}, 6, col::pointer);
+        DrawLogo({x, y, 56, 56}, (float)GetTime());
         Text("Segfault", x, y + 78, 42, WHITE, F_DISPLAY);
         Text("Learn C & C++ by writing it.", x, y + 132, 17, Alpha(WHITE, 0.85f), F_MEDIUM);
 
