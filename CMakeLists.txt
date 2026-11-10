@@ -18,6 +18,7 @@ if (NOT raylib_FOUND)
         URL https://github.com/raysan5/raylib/archive/refs/tags/5.5.tar.gz
         DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
     FetchContent_MakeAvailable(raylib)
+    set(SEGFAULT_RAYLIB_BUNDLED ON)
 endif()
 
 # ------------------------------------------------- exam solutions (no UI) --
@@ -36,6 +37,10 @@ file(GLOB APP_SOURCES CONFIGURE_DEPENDS
 add_executable(Segfault ${APP_SOURCES})
 target_include_directories(Segfault PRIVATE src)
 target_link_libraries(Segfault PRIVATE raylib exam_solutions)
+if (SEGFAULT_RAYLIB_BUNDLED AND NOT BUILD_SHARED_LIBS)
+    # raylib is built here with GLFW inside: theme-coloured system cursors
+    target_compile_definitions(Segfault PRIVATE SEGFAULT_GLFW_CURSOR)
+endif()
 if (APPLE)
     target_link_libraries(Segfault PRIVATE "-framework IOKit" "-framework Cocoa" "-framework OpenGL")
 endif()

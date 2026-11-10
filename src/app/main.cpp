@@ -10,6 +10,7 @@
 #include "raylib.h"
 #include "rlgl.h"
 #include "app.h"
+#include "cursor.h"
 #include "runner.h"
 #include "theme.h"
 #include "ui.h"
@@ -36,6 +37,7 @@ static void CreateScenes() {
     gScenes[(int)SceneId::ListLab].reset(CreateListLabScene());
     gScenes[(int)SceneId::Grid].reset(CreateGridScene());
     gScenes[(int)SceneId::Login].reset(CreateLoginScene());
+    gScenes[(int)SceneId::Leaderboard].reset(CreateLeaderboardScene());
 }
 
 static std::string FindResourceDir() {
@@ -345,7 +347,7 @@ int main(int argc, char** argv) {
                        {offX, offY, dw, dh}, {0, 0}, 0, WHITE);
         EndBlendMode();
         EndDrawing();
-        SetMouseCursor(WantsIBeam() ? MOUSE_CURSOR_IBEAM : WantsHandCursor() ? MOUSE_CURSOR_POINTING_HAND : MOUSE_CURSOR_DEFAULT);
+        SetAppCursor(WantsIBeam() ? CURSOR_IBEAM : WantsHandCursor() ? CURSOR_HAND : CURSOR_ARROW);
 
         frame++;
         if (bench) {
@@ -376,11 +378,21 @@ int main(int argc, char** argv) {
             ImageFormat(&img, PIXELFORMAT_UNCOMPRESSED_R8G8B8);
             ExportImage(img, shotFile);
             UnloadImage(img);
+            // SEGFAULT_CURSOR_DUMP=<folder>: also save this theme's cursors as pictures
+            if (const char* dir = std::getenv("SEGFAULT_CURSOR_DUMP")) {
+                const char* names[CURSOR_COUNT] = {"arrow", "hand", "ibeam"};
+                for (int k = 0; k < CURSOR_COUNT; k++) {
+                    Image c = CursorImage((CursorKind)k, 64);
+                    ExportImage(c, (std::string(dir) + "/cursor_" + Themes()[CurrentTheme()].id + "_" + names[k] + ".png").c_str());
+                    UnloadImage(c);
+                }
+            }
             break;
         }
     }
 
     for (auto& s : gScenes) s.reset();
+    UnloadCursors();
     if (canvas.id) UnloadRenderTexture(canvas);
     UnloadFonts();
     CloseWindow();
