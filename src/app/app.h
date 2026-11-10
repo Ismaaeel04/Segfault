@@ -22,7 +22,7 @@ inline Color TopicColor(int s) { return SectionColor(s); }
 
 // ------------------------------------------------------------- scenes -----
 // New scenes go before Count: --shot selects a scene by its number.
-enum class SceneId { Home, Study, Practice, Mock, Quiz, Visualizer, ListLab, Grid, Login, Leaderboard, Count };
+enum class SceneId { Home, Study, Practice, Mock, Quiz, Visualizer, ListLab, Grid, Login, Leaderboard, Profile, Count };
 
 class Scene {
 public:
@@ -40,6 +40,7 @@ struct Progress {
     std::map<std::string, int> best;     // best scores ("mock:1", "quiz:streak", ...)
     int quizAnswered = 0, quizCorrect = 0;
     std::string theme;                   // theme id chosen by this student ("" = not chosen)
+    int avatarColour = 0;                // avatar::Draw colour when there is no picture
     std::string path;
 
     bool Has(const std::string& key) const { return done.count(key) > 0; }
@@ -105,6 +106,7 @@ struct LeaderRow {
     bool you = false;
     int xp = 0, level = 1, solved = 0, lessons = 0, answered = 0, correct = 0;
     int bestMock = -1;   // best mock exam score in %, -1 = none taken
+    int avatarColour = 0;
 };
 // Every student on this computer (read from their progress files).
 std::vector<LeaderRow> LoadLeaderboard();
@@ -130,6 +132,7 @@ namespace sources {
 // Scene factories (scenes/*.cpp)
 Scene* CreateLoginScene();
 Scene* CreateLeaderboardScene();
+Scene* CreateProfileScene();
 Scene* CreateHomeScene();
 Scene* CreateStudyScene();
 Scene* CreatePracticeScene();

@@ -10,6 +10,7 @@
 #include "raylib.h"
 #include "rlgl.h"
 #include "app.h"
+#include "avatar.h"
 #include "cursor.h"
 #include "runner.h"
 #include "theme.h"
@@ -38,6 +39,7 @@ static void CreateScenes() {
     gScenes[(int)SceneId::Grid].reset(CreateGridScene());
     gScenes[(int)SceneId::Login].reset(CreateLoginScene());
     gScenes[(int)SceneId::Leaderboard].reset(CreateLeaderboardScene());
+    gScenes[(int)SceneId::Profile].reset(CreateProfileScene());
 }
 
 static std::string FindResourceDir() {
@@ -85,7 +87,14 @@ static bool TopBar(Scene* scene) {
     // Only on Home, so nobody logs out by accident in the middle of an exam.
     if (app.current == SceneId::Home && !app.user.empty()) {
         if (Button({bx - 208, 15, 88, 34}, "Log out", BTN_GHOST, true, 13.5f)) app.signOutRequested = true;
-        TextRight(app.user, bx - 220, 23, 14.5f, col::text, F_BOLD);
+        // the name opens the profile
+        float nw = Measure(app.user, 14.5f, F_BOLD).x;
+        Rectangle name = {bx - 220 - nw - 36, 15, nw + 44, 34};
+        bool hover = MouseIn(name);
+        if (hover) RoundRect(name, 17, col::panelHi);
+        avatar::Draw({name.x + 6, name.y + 5, 24, 24}, app.user, app.progress.avatarColour);
+        Text(app.user, name.x + 36, 23, 14.5f, hover ? col::heading : col::text, F_BOLD);
+        if (Clicked(name)) app.Go(SceneId::Profile, "");
     }
     RoundRect({bx, 15, 228, 34}, 17, col::panel);
     RoundRectLines({bx, 15, 228, 34}, 17, 1, Alpha(col::border, 0.7f));
@@ -290,6 +299,7 @@ int main(int argc, char** argv) {
         if (app.signOutRequested) {
             app.signOutRequested = false;
             for (auto& s : gScenes) s.reset();   // flushes unsaved code to the student's folder
+            avatar::ForgetAll();
             SignOut();
             CreateScenes();
         }
@@ -305,6 +315,8 @@ int main(int argc, char** argv) {
             fade = 1;
         }
         Scene* scene = gScenes[(int)app.current].get();
+        // Pictures dropped onto the window only mean something on the profile.
+        if (IsFileDropped() && app.current != SceneId::Profile) UnloadDroppedFiles(LoadDroppedFiles());
         float dt = std::fmin(GetFrameTime(), 0.05f);
 
         // ---- draw everything into the canvas ----------------------------
@@ -392,6 +404,7 @@ int main(int argc, char** argv) {
     }
 
     for (auto& s : gScenes) s.reset();
+    avatar::ForgetAll();
     UnloadCursors();
     if (canvas.id) UnloadRenderTexture(canvas);
     UnloadFonts();

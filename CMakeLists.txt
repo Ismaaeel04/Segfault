@@ -37,6 +37,9 @@ file(GLOB APP_SOURCES CONFIGURE_DEPENDS
 add_executable(Segfault ${APP_SOURCES})
 target_include_directories(Segfault PRIVATE src)
 target_link_libraries(Segfault PRIVATE raylib exam_solutions)
+if (WIN32)
+    target_link_libraries(Segfault PRIVATE comdlg32)   # the "open file" window
+endif()
 if (SEGFAULT_RAYLIB_BUNDLED AND NOT BUILD_SHARED_LIBS)
     # raylib is built here with GLFW inside: theme-coloured system cursors
     target_compile_definitions(Segfault PRIVATE SEGFAULT_GLFW_CURSOR)
@@ -95,6 +98,13 @@ add_test(NAME scrollbar COMMAND scrollbar_tests)
 
 add_executable(paste_tests tests/test_paste.cpp)
 add_test(NAME paste COMMAND paste_tests)
+
+add_executable(avatar_tests tests/test_avatar.cpp src/app/files.cpp)
+target_link_libraries(avatar_tests PRIVATE raylib)
+if (MSVC)
+    target_compile_options(avatar_tests PRIVATE /utf-8)
+endif()
+add_test(NAME avatar COMMAND avatar_tests)
 
 add_executable(bracket_tests tests/test_brackets.cpp)
 add_test(NAME brackets COMMAND bracket_tests)

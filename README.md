@@ -51,6 +51,14 @@ to the student's account. The mouse cursor (arrow, hand and text cursor) is draw
 theme's colours too; it is a real system cursor, so it moves without delay. `--selftest` checks every theme's text and code colours for contrast.
 Palettes live in `src/app/theme.cpp`.
 
+## Profile
+
+Click your picture on the home screen, or your name in the top bar. Choose a picture with the
+*open file* window, drop one onto the window, or paste one with Ctrl+V (PNG, JPG, BMP or GIF, up
+to 20 MB). It is cropped to a square from the middle and saved as `avatar.png` in the student's
+folder. Without a picture, your initial is shown on the colour you pick. The profile also shows
+your stats.
+
 ## Leaderboard
 
 **Leaderboard** on the home screen ranks every student on this computer by XP, problems solved,
@@ -93,6 +101,7 @@ raylib is downloaded automatically the first time.
                                   # register, login, bad input, what ends up on disk
 ./build/scrollbar_tests           # scrollbar geometry: thumb position and dragging
 ./build/paste_tests               # what a text box keeps from pasted text
+./build/avatar_tests              # profile pictures: crop, round mask, paths with non-ASCII letters
 SEGFAULT_BENCH=1920x1080 ./build/Segfault --shot 0 - out.png 330   # frame times (add
                                   # SEGFAULT_BENCH_TOUR=1 to visit every screen)
 ./build/Segfault --selftest   # compiles every problem's reference solution with every compiler

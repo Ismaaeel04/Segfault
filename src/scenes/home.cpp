@@ -3,6 +3,7 @@
 // progress per section.
 // ============================================================================
 #include "app/app.h"
+#include "app/avatar.h"
 #include "app/runner.h"
 #include "app/theme.h"
 #include "app/ui.h"
@@ -82,9 +83,10 @@ private:
         RoundRectLines(r, 16, 1, Alpha(col::accent, 0.3f));
         // avatar with the student's initial
         Rectangle av = {r.x + 16, r.y + 13, 48, 48};
-        GradientRoundRect(av, 24, col::accent, Mix(col::accent, col::accent2, 0.7f));
-        std::string who = app.user.empty() ? "S" : std::string(1, (char)std::toupper((unsigned char)app.user[0]));
-        TextCenter(who, av, 22, OnColor(col::accent), F_DISPLAY);
+        bool avHover = !app.user.empty() && InputEnabled() && MouseIn(av);
+        if (avHover) DrawRing({av.x + 24, av.y + 24}, 26, 28.5f, 0, 360, 48, col::accent);
+        avatar::Draw(av, app.user, app.progress.avatarColour);
+        if (!app.user.empty() && Clicked(av)) app.Go(SceneId::Profile, "");
 
         Text(app.user.empty() ? "Ready for your coding exams?" : "Welcome back, " + app.user, r.x + 80, r.y + 13, 23, col::heading, F_DISPLAY);
         Text("Study a topic, write real code, then test yourself under exam conditions.", r.x + 81, r.y + 44, 14.5f, col::dim, F_MEDIUM);

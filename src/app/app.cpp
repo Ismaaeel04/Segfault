@@ -76,6 +76,7 @@ void Progress::Load(const std::string& file) {
         else if (key == "answered") in >> quizAnswered;
         else if (key == "correct") in >> quizCorrect;
         else if (key == "theme") in >> theme;
+        else if (key == "avatar") in >> avatarColour;
         else { std::string rest; std::getline(in, rest); }
     }
 }
@@ -86,6 +87,7 @@ void Progress::Save() const {
     if (!out) return;
     out << "xp " << xp << "\nanswered " << quizAnswered << "\ncorrect " << quizCorrect << "\n";
     if (!theme.empty()) out << "theme " << theme << "\n";
+    if (avatarColour) out << "avatar " << avatarColour << "\n";
     for (auto& d : done) out << "done " << d << "\n";
     for (int m : mistakes) out << "mistake " << m << "\n";
     for (auto& b : best) out << "best " << b.first << " " << b.second << "\n";
@@ -93,9 +95,11 @@ void Progress::Save() const {
 
 void Progress::Reset() {
     std::string p = path, t = theme;
+    int a = avatarColour;
     *this = Progress();
     path = p;
     theme = t;
+    avatarColour = a;
     Save();
 }
 
@@ -136,6 +140,7 @@ std::vector<LeaderRow> LoadLeaderboard() {
         r.level = p.Level();
         r.answered = p.quizAnswered;
         r.correct = p.quizCorrect;
+        r.avatarColour = p.avatarColour;
         // only problems and lessons that exist, the same as the home screen counts
         for (const Problem& pr : Problems()) r.solved += p.Has("solved:" + pr.id);
         for (const Lesson& l : Lessons()) r.lessons += p.Has("lesson:" + l.id);

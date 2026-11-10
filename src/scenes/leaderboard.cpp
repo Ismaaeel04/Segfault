@@ -3,6 +3,7 @@
 // solved, quiz accuracy or best mock exam.
 // ============================================================================
 #include "app/app.h"
+#include "app/avatar.h"
 #include "app/theme.h"
 #include "app/ui.h"
 #include "content/content.h"
@@ -33,6 +34,7 @@ public:
     const char* Title() const override { return "Leaderboard"; }
     void Enter(const std::string&) override {
         rows = LoadLeaderboard();
+        avatar::ForgetAll();   // pick up pictures other students have changed
         scroll.Reset();
         Sort();
     }
@@ -84,11 +86,7 @@ private:
         return col::faint;
     }
 
-    void Avatar(Rectangle r, const std::string& name) {
-        GradientRoundRect(r, r.width / 2, col::accent, Mix(col::accent, col::accent2, 0.7f));
-        std::string initial(1, (char)std::toupper((unsigned char)name[0]));
-        TextCenter(initial, r, r.width * 0.45f, OnColor(col::accent), F_DISPLAY);
-    }
+    static void Avatar(Rectangle r, const LeaderRow& row) { avatar::Draw(r, row.name, row.avatarColour); }
 
     void Podium() {
         if (rows.empty()) return;
@@ -110,7 +108,7 @@ private:
             RoundRect({card.x + card.width / 2 - 32, card.y, 64, 4}, 2, medal);
 
             Rectangle av = {card.x + card.width / 2 - 30, card.y + 22, 60, 60};
-            Avatar(av, r.name);
+            Avatar(av, r);
             Vector2 badge = {av.x + av.width - 4, av.y + av.height - 6};
             DrawCircleV(badge, 15, col::panel);
             DrawCircleV(badge, 12.5f, medal);
@@ -152,7 +150,7 @@ private:
             } else {
                 Text(std::to_string(place), cols[0] + 3, ty, 15, col::dim, F_BOLD);
             }
-            Avatar({cols[1], row.y + 8, 28, 28}, p.name);
+            Avatar({cols[1], row.y + 8, 28, 28}, p);
             Text(p.name, cols[1] + 40, ty, 16, col::heading, F_BOLD);
             if (p.you) Badge(cols[1] + 52 + Measure(p.name, 16, F_BOLD).x, ty - 2, "You", col::accent, 11.5f);
             Text(std::to_string(p.level), cols[2], ty, 15, col::warn, F_BOLD);
