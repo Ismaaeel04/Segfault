@@ -93,10 +93,20 @@ her back. Strike a bug and a question may appear: answer right for a critical hi
 strikes back (the last blow always asks one). Each land ends with a guardian you beat by writing
 code at a terminal: every test your code passes is a hit, and a compile error lets it strike you.
 
-Chapter 1 is playable: the Stack Plains (loops and numbers), its Off-by-One Goblins and the
-Infinite Loop Serpent. The menu has New Game, Continue, Restart and Settings (rebindable keys,
-difficulty, question timer, sound). Progress and settings are saved per student in
-`forgotten_pointer.txt`. Everything is drawn with raylib shapes. The music is MIDI (in
+Two chapters are playable:
+
+1. **Stack Plains** (loops and numbers): Off-by-One Goblins, and the Infinite Loop Serpent, a
+   snake in the shape of ∞ that spits loop rings along the ground (jump them).
+2. **Array Canyon** (arrays and 2D arrays): Out-of-Bounds Imps that hop at you, each carrying the
+   index it reached for (`[4]`, `[-1]`...), and the Matrix Golem, a giant whose body is an
+   `int m[3][3]`. It drops blocks where you stand (a mark such as `m[2][0]` shows where each will
+   land) or slams the ground to send a shockwave along it.
+
+The questions and the boss's problem come from that land's sections of the course. The menu has
+New Game, Continue (the next land), Restart and Settings (rebindable keys, difficulty, question
+timer, sound). Progress and settings are saved per student in `forgotten_pointer.txt`. The
+characters are drawn with raylib shapes; each land has a painted backdrop in
+`resources/backgrounds` (without it, the land is drawn by hand). Each land and each boss has its own song. The music is MIDI (in
 `resources/music`) played by a small 8-bit synthesiser in the app, with a lo-fi finish; the effects
 (sword, hits, a goblin falling, the boss going down...) and SegFault OS's system sounds are made in
 code too. `Segfault --render-sounds <folder>` writes them all as .wav files.

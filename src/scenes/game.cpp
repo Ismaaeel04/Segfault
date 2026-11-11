@@ -5,8 +5,9 @@
 // strikes back. Each land ends with a boss you beat by writing code: every
 // test your code passes is a hit.
 //
-// Phase 1: title menu, settings, the story, and Chapter 1 (Stack Plains:
-// Off-by-One Goblins and the Infinite Loop Serpent).
+// Chapter 1: Stack Plains (Off-by-One Goblins, the Infinite Loop Serpent).
+// Chapter 2: Array Canyon (Out-of-Bounds Imps, the Matrix Golem).
+// Plus the title menu, settings, and the story between the lands.
 // ============================================================================
 #include "app/app.h"
 #include "app/sound.h"
@@ -81,16 +82,40 @@ struct Goblin {
     int face = -1;
     int hp = 3, maxHp = 3;
     float walk = 0, hurt = 0, dying = -1, touchCd = 0;
+    float hy = 0, vy = 0, hopCd = 0.5f;   // imps: height above the ground, fall speed, time to the next hop
+    int index = 4;                         // imps: the out-of-bounds index they carry
     bool alive = true;
 };
 
-struct Ring { float x, vx; float life; };
+struct Ring { float x, vx; float life; };   // the Serpent's loop rings, the Golem's shockwaves
+
+// A block the Golem drops: first a mark where it will land, then it falls.
+struct Rock { float x, y, vy, warn, warn0; int value; std::string label; float landed; };
 
 struct Popup { std::string text; float x, y, age; Color col; };
 
 enum State { MENU, SETTINGS, STORY, CHAPTER, PLAY, QUIZ, TERMINAL, PAUSE, DEAD, VICTORY, CONFIRM_RESTART };
 
 const float kLevelLen = 5200;
+
+// The lands, one per exam topic. Chapter n is kLands[n - 1].
+struct Land {
+    const char* name;
+    const char* topic;
+    const char* boss;        // its full name
+    const char* bossShort;   // "the Serpent"
+    const char* enemy;       // one of its bugs
+    const char* enemies;
+    const char* music;
+    const char* bossMusic;
+    Section a, b;            // the questions and the boss's problem come from these sections
+    unsigned bossColor;
+};
+const Land kLands[] = {
+    {"Stack Plains", "Loops and numbers", "Infinite Loop Serpent", "the Serpent", "goblin", "goblins", "plains", "boss", S_NUMBERS, S_LOOPS, 0x3fd1c7},
+    {"Array Canyon", "Arrays and 2D arrays", "Matrix Golem", "the Golem", "imp", "imps", "canyon", "golem", S_ARRAYS, S_GRID, 0xff9e4a},
+};
+const int kLandCount = (int)(sizeof(kLands) / sizeof(kLands[0]));
 
 // ---------------------------------------------------------------- story ----
 struct Panel { const char* text; int art; };
@@ -104,8 +129,14 @@ const Panel kIntro[] = {
 };
 const Panel kAfterChapter1[] = {
     {"The Infinite Loop Serpent lets go of its own tail, and its endless circle breaks at last.", 4},
-    {"Among the scales lies a ribbon from Ada's crown. Her trail leads down, into the Array Caverns...", 1},
-    {"To be continued. Chapter 2, the Array Caverns, arrives in the next update.", 3},
+    {"Among the scales lies a ribbon from Ada's crown. Her trail leads east, out of the plains and into the Array Canyon.", 1},
+    {"There the stones stand in rows and columns, each with its index. Imps hop between them, always reaching one past the end, "
+     "and at the far wall waits the Matrix Golem.", 5},
+};
+const Panel kAfterChapter2[] = {
+    {"The Matrix Golem falls apart, row by row, until only loose stones are left.", 6},
+    {"In its heart lies a second ribbon, and an address scratched into the stone. The Heap is close.", 1},
+    {"To be continued. Chapter 3 arrives in the next update.", 3},
 };
 
 // ================================================================= scene ===
@@ -122,17 +153,26 @@ public:
         t = 0;
         snd::SetMusicVolume(set.music);
         snd::PlayMusic("title");
-        for (const char* id : {"story", "plains", "boss", "gameover"}) snd::Preload(id);   // ready before they are needed
-        // --shot hooks, to check each screen from the command line
-        if (param == "settings") state = SETTINGS;
-        else if (param == "story") StartStory(kIntro, 4, CHAPTER), panelIdx = 2, panelT = 100;
-        else if (param == "play" || param == "quiz" || param == "boss" || param == "terminal") {
+        for (const char* id : {"story", "plains", "boss", "canyon", "golem", "gameover"}) snd::Preload(id);   // ready before they are needed
+        // --shot hooks, to check each screen from the command line ("play2": the same in chapter 2)
+        std::string p = param;
+        land = 0;
+        if (!p.empty() && p.back() == '2') { land = 1; p.pop_back(); }
+        if (p == "settings") state = SETTINGS;
+        else if (p == "story" && land == 0) StartStory(kIntro, 4, CHAPTER), panelIdx = 2, panelT = 100;
+        else if (p == "story") StartStory(kAfterChapter1, 3, CHAPTER, 1), panelIdx = 2, panelT = 100;
+        else if (p == "chapter") StartChapter(land), chapterT = 0.5f;
+        else if (p == "play" || p == "quiz" || p == "boss" || p == "terminal") {
             ResetLevel();
             state = PLAY;
-            snd::PlayMusic("plains");
-            if (param == "quiz") { hero.x = 900; AskQuestion(0, false); }
-            if (param == "boss" || param == "terminal") { goblins.clear(); hero.x = kLevelLen - 600; Update(0.016f); bossT = 2; ringCd = 0; Update(0.5f); }
-            if (param == "terminal") state = TERMINAL;
+            snd::PlayMusic(kLands[land].music);
+            if (p == "quiz") { hero.x = 900; AskQuestion(0, false); }
+            if (p == "play" && land == 1) { hero.x = 900; for (int i = 0; i < 40; i++) Update(1 / 60.0f); }   // the imps hopping
+            if (p == "boss" || p == "terminal") {
+                goblins.clear(); hero.x = kLevelLen - 600; Update(0.016f); bossT = 2; ringCd = 0; golemCd = 0; Update(0.5f);
+                for (int i = 0; i < 45; i++) Update(1 / 60.0f);   // the Golem's first attack under way
+            }
+            if (p == "terminal") state = TERMINAL;
         }
     }
 
@@ -166,16 +206,22 @@ private:
     int panelCount = 0, panelIdx = 0;
     float panelT = 0;
     State afterStory = CHAPTER;
+    int storyLand = 0;      // the chapter a story leads to
     float chapterT = 0;
+    int land = 0;           // the chapter being played (0 = Stack Plains)
     // play
     Hero hero;
     std::vector<Goblin> goblins;
     std::vector<Ring> rings;
+    std::vector<Rock> rocks;
     std::vector<Popup> popups;
     float cam = 0, shake = 0;
     bool arena = false, bossAwake = false;
     float arenaCam = 0, termX = 0;
     float bossHp = 1, bossHurt = 0, bossX = 0, bossT = 0, ringCd = 2, termCd = 0, bossDying = -1;
+    // the Golem: its arms (0 down .. 1 raised), what it is winding up (0 nothing, 1 a rain of blocks, 2 a slam)
+    float golemPose = 0, golemCd = 2, golemT = 0;
+    int golemAct = 0;
     // quiz
     std::vector<int> questionPool;
     size_t poolNext = 0;
@@ -260,7 +306,9 @@ private:
     void Shade(float a) { DrawRectangleRec(ScreenRect(), Fade(Hex(0x07060d), a)); }
 
     void TitleBackdrop() {
-        fp::DrawStackPlains((0.5f - 0.5f * std::cos(t * 0.05f)) * 2600, t);   // drifts back and forth
+        float drift = (0.5f - 0.5f * std::cos(t * 0.05f)) * 2600;   // drifts back and forth
+        if (std::min(chaptersDone, kLandCount - 1) == 1) fp::DrawArrayCanyon(drift, t);
+        else fp::DrawStackPlains(drift, t);
         // the hero, standing at the edge of the plains
         fp::DrawHero({ScreenRect().x + 220, kGround}, 1.3f, 1, 0, -1, t, false);
     }
@@ -304,10 +352,10 @@ private:
         TextCenter("Arrows / mouse to choose, Enter to start", {0, H - 46, W, 20}, 13, Hex(0x8f88b8), F_MEDIUM);
 
         switch (chosen) {
-            case 0: StartChapter(); break;   // there is only chapter 1 so far
+            case 0: StartChapter(std::min(chaptersDone, kLandCount - 1)); break;   // the next land, or the last one
             case 1:
                 if (chaptersDone > 0) { state = CONFIRM_RESTART; break; }
-                StartStory(kIntro, 4, CHAPTER);
+                StartStory(kIntro, 4, CHAPTER, 0);
                 break;
             case 2: state = CONFIRM_RESTART; break;
             case 3: settingsBack = MENU; state = SETTINGS; rebinding = -1; break;
@@ -325,7 +373,7 @@ private:
         TextCenter("Your progress through the lands is lost.", {box.x, box.y + 74, box.width, 22}, 15, Hex(0xb9b3d9), F_MEDIUM);
         bool yes = Item(W / 2 - 120, box.y + 130, "Yes, restart", false) || IsKeyPressed(KEY_Y);
         bool no = Item(W / 2 + 120, box.y + 130, "Cancel", false) || IsKeyPressed(KEY_ESCAPE) || IsKeyPressed(KEY_N);
-        if (yes) { chaptersDone = 0; Save(); StartStory(kIntro, 4, CHAPTER); }
+        if (yes) { chaptersDone = 0; Save(); StartStory(kIntro, 4, CHAPTER, 0); }
         else if (no) state = MENU;
     }
 
@@ -406,7 +454,8 @@ private:
     }
 
     // ------------------------------------------------------------- story --
-    void StartStory(const Panel* p, int n, State after) {
+    void StartStory(const Panel* p, int n, State after, int nextLand = 0) {
+        storyLand = nextLand;
         panels = p;
         panelCount = n;
         panelIdx = 0;
@@ -436,6 +485,12 @@ private:
                 break;
             case 3: fp::DrawHero({mid.x, mid.y - 30}, 2.0f, 1, 0, -1, t, false); break;
             case 4: fp::DrawSerpent({mid.x, mid.y - 200}, 140, t * 0.2f, 0, 1); break;
+            case 5:   // the canyon: the Golem and two imps
+                fp::DrawGolem({mid.x + 120, mid.y - 24}, 0.9f, t, 0.15f + 0.15f * std::sin(t * 1.2f), 0, 1, 0);
+                fp::DrawImp({mid.x - 230, mid.y - 30 - std::fabs(std::sin(t * 3)) * 40}, 1.2f, 1, std::fabs(std::sin(t * 3)), 0, 1, 4, t);
+                fp::DrawImp({mid.x - 110, mid.y - 30 - std::fabs(std::sin(t * 3 + 1.5f)) * 40}, 1.2f, 1, std::fabs(std::sin(t * 3 + 1.5f)), 0, 1, -1, t);
+                break;
+            case 6: fp::DrawGolem({mid.x, mid.y - 24}, 0.9f, t, 0, 0, 1, 0.9f); break;
         }
         EndClip();
         DrawRectangleRoundedLinesEx(art, 0.06f, 10, 2, Hex(0x4b4475));
@@ -462,13 +517,17 @@ private:
     }
 
     void EndStory() {
-        if (afterStory == CHAPTER) StartChapter();
-        else state = afterStory;
+        if (afterStory == CHAPTER) StartChapter(storyLand);
+        else {
+            state = afterStory;
+            if (state == MENU) { menuSel = 0; snd::PlayMusic("title"); }
+        }
     }
 
     // ------------------------------------------------------- chapter card --
-    void StartChapter() {
-        snd::PlayMusic("plains");
+    void StartChapter(int which) {
+        land = std::clamp(which, 0, kLandCount - 1);
+        snd::PlayMusic(kLands[land].music);
         state = CHAPTER;
         chapterT = 0;
         ResetLevel();
@@ -479,9 +538,9 @@ private:
         Draw();
         float a = chapterT < 2.2f ? 1 : 1 - Clamp01((chapterT - 2.2f) / 0.6f);
         Shade(0.75f * a);
-        TextCenter("CHAPTER 1", {0, 280, W, 30}, 20, Fade(Hex(0xb9b0ff), a), F_BOLD);
-        TextCenter("Stack Plains", {0, 312, W, 70}, 60, Fade(WHITE, a), F_HEAVY);
-        TextCenter("Loops and numbers", {0, 392, W, 26}, 18, Fade(Hex(0xd8d3f5), a), F_MEDIUM);
+        TextCenter(TextFormat("CHAPTER %d", land + 1), {0, 280, W, 30}, 20, Fade(Hex(0xb9b0ff), a), F_BOLD);
+        TextCenter(kLands[land].name, {0, 312, W, 70}, 60, Fade(WHITE, a), F_HEAVY);
+        TextCenter(kLands[land].topic, {0, 392, W, 26}, 18, Fade(Hex(0xd8d3f5), a), F_MEDIUM);
         if (chapterT > 2.8f || ((IsKeyPressed(KEY_ENTER) || IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) && chapterT > 0.3f)) state = PLAY;
     }
 
@@ -491,13 +550,20 @@ private:
         hero.hearts = set.Hearts();
         goblins.clear();
         const float xs[] = {1000, 1500, 2050, 2550, 3100, 3650};
+        const int oob[] = {4, 5, -1, 8, 10, 16};   // indices past the end of an int a[4] (or before it)
         for (float x : xs) {
             Goblin g;
             g.x = g.home = x;
             g.hp = g.maxHp = GetRandomValue(2, 3);
+            g.index = oob[GetRandomValue(0, 5)];
+            g.hopCd = Rand01();
             goblins.push_back(g);
         }
         rings.clear();
+        rocks.clear();
+        golemPose = 0;
+        golemCd = 2.5f;
+        golemAct = 0;
         popups.clear();
         arena = bossAwake = false;
         bossHp = 1;
@@ -506,16 +572,20 @@ private:
         bestPassed = 0;
         termMsg.clear();
         cam = 0;
-        // questions about loops and numbers, shuffled; each one once before any repeats
+        // questions about this land's topic, shuffled; each one once before any repeats
+        const Land& ld = kLands[land];
         questionPool.clear();
         for (const Question& qq : Questions())
-            if (qq.section == S_NUMBERS || qq.section == S_LOOPS) questionPool.push_back(qq.id);
+            if (qq.section == ld.a || qq.section == ld.b) questionPool.push_back(qq.id);
         Shuffle(questionPool);
         poolNext = 0;
-        // the boss's problem: a medium one about loops or numbers
+        // the boss's problem: a medium one on the topic (C, so any compiler can run it)
         std::vector<const Problem*> pick;
         for (const Problem& p : Problems())
-            if ((p.section == S_NUMBERS || p.section == S_LOOPS) && p.difficulty == 1) pick.push_back(&p);
+            if ((p.section == ld.a || p.section == ld.b) && p.difficulty == 1 && !p.cppOnly) pick.push_back(&p);
+        if (pick.empty())
+            for (const Problem& p : Problems())
+                if ((p.section == ld.a || p.section == ld.b) && p.difficulty == 1) pick.push_back(&p);
         bossProblem = pick.empty() ? nullptr : pick[GetRandomValue(0, (int)pick.size() - 1)];
         if (bossProblem) ws.Open(bossProblem, "", true);
     }
@@ -568,7 +638,7 @@ private:
             for (size_t i = 0; i < goblins.size(); i++) {
                 Goblin& g = goblins[i];
                 float dx = (g.x - hero.x) * hero.face;
-                if (!g.alive || g.dying >= 0 || dx < -20 || dx > 130 || std::fabs(hero.y - kGround) > 60) continue;
+                if (!g.alive || g.dying >= 0 || dx < -20 || dx > 130 || std::fabs((hero.y - kGround) + g.hy) > 70) continue;
                 Strike((int)i);
                 break;
             }
@@ -579,8 +649,36 @@ private:
             if (!g.alive) continue;
             g.hurt = std::max(0.0f, g.hurt - dt * 3);
             g.touchCd = std::max(0.0f, g.touchCd - dt);
-            if (g.dying >= 0) { g.dying += dt; if (g.dying > 0.6f) g.alive = false; continue; }
+            if (g.dying >= 0) { g.dying += dt; g.hy = std::max(0.0f, g.hy - 300 * dt); if (g.dying > 0.6f) g.alive = false; continue; }
             float dx = hero.x - g.x;
+            if (land == 1) {   // an imp: it hops at you
+                bool chase = std::fabs(dx) < 520;
+                if (g.hy > 0 || g.vy < 0) {   // in the air
+                    g.vy += 1900 * dt;
+                    g.hy -= g.vy * dt;
+                    float sp = chase ? (std::fabs(dx) > 30 ? 230.0f : 40.0f) : 95.0f;
+                    g.x += g.face * sp * dt;
+                    if (g.hy <= 0) { g.hy = 0; g.vy = 0; g.hopCd = chase ? 0.35f + Rand01() * 0.45f : 0.6f + Rand01() * 0.6f; }
+                } else {
+                    if (chase) g.face = dx > 0 ? 1 : -1;
+                    else {   // little hops around home
+                        if (g.x > g.home + 120) g.face = -1;
+                        if (g.x < g.home - 120) g.face = 1;
+                    }
+                    g.hopCd -= dt;
+                    if (g.hopCd <= 0) {
+                        g.vy = chase ? -(560 + Rand01() * 200) : -380;
+                        g.hy = 0.01f;
+                        if (std::fabs(dx) < 700) Fx(snd::FX_HOP, chase ? 0.6f : 0.3f);
+                    }
+                }
+                if (std::fabs(dx) < 46 && std::fabs((hero.y - kGround) + g.hy) < 80 && g.touchCd <= 0 && hero.hurt <= 0) {
+                    g.touchCd = 1.0f;
+                    HurtHero(dx > 0 ? 1 : -1);
+                    if (state != PLAY) return;
+                }
+                continue;
+            }
             float speed = 0;
             if (std::fabs(dx) < 420) { g.face = dx > 0 ? 1 : -1; speed = std::fabs(dx) > 36 ? 130.0f : 0; }   // runs at you
             else {   // patrol around home
@@ -602,33 +700,37 @@ private:
             arena = true;
             arenaCam = kLevelLen - vw - L;   // the last screen of the level
             termX = arenaCam + L + 150;
-            bossX = arenaCam + L + vw * 0.68f;
+            bossX = arenaCam + L + vw * (land == 0 ? 0.68f : 0.72f);
             bossT = 0;
             ringCd = 2.5f;
+            golemCd = 2.2f;
             termCd = 0;
-            Fx(snd::FX_ROAR);
-            snd::PlayMusic("boss");
+            Fx(land == 0 ? snd::FX_ROAR : snd::FX_GOLEM_WAKE);
+            snd::PlayMusic(kLands[land].bossMusic);
             shake = 0.6f;
-            Pop("The Infinite Loop Serpent awakens!", hero.x, hero.y - 220, Hex(0x0f7f73));
+            Pop(std::string("The ") + kLands[land].boss + " awakens!", hero.x, hero.y - 220, land == 0 ? Hex(0x0f7f73) : Hex(0xa0441c));
             bossAwake = true;
         }
         if (bossAwake && bossDying < 0) {
             bossT += dt;
             bossHurt = std::max(0.0f, bossHurt - dt * 2);
-            // it drifts back and forth over the right of the arena
-            float span = vw * 0.22f;
-            bossX = arenaCam + L + vw * 0.66f + std::sin(bossT * 0.7f) * span;
-            // spits loop rings that roll along the ground: jump over them
-            ringCd -= dt;
-            if (ringCd <= 0) {
-                rings.push_back({bossX - 120, -(300.0f + GetRandomValue(0, 140)), 6});
-                Fx(snd::FX_SPIT, 0.8f);
-                ringCd = 1.6f + Rand01() * 1.2f;
-            }
-            // touching the coil hurts
-            Vector2 bc = BossCenter();
-            float ddx = hero.x - bc.x, ddy = (hero.y - 70) - bc.y;
-            if (ddx * ddx + ddy * ddy < 170.0f * 170.0f) HurtHero(ddx > 0 ? 1 : -1);
+            if (land == 0) {
+                // it drifts back and forth over the right of the arena
+                float span = vw * 0.22f;
+                bossX = arenaCam + L + vw * 0.66f + std::sin(bossT * 0.7f) * span;
+                // spits loop rings that roll along the ground: jump over them
+                ringCd -= dt;
+                if (ringCd <= 0) {
+                    rings.push_back({bossX - 120, -(300.0f + GetRandomValue(0, 140)), 6});
+                    Fx(snd::FX_SPIT, 0.8f);
+                    ringCd = 1.6f + Rand01() * 1.2f;
+                }
+                // touching the coil hurts
+                Vector2 bc = BossCenter();
+                float ddx = hero.x - bc.x, ddy = (hero.y - 70) - bc.y;
+                if (ddx * ddx + ddy * ddy < 170.0f * 170.0f) HurtHero(ddx > 0 ? 1 : -1);
+            } else UpdateGolem(dt, L, vw);
+            if (state != PLAY) return;
             termCd = std::max(0.0f, termCd - dt);
             bool near = std::fabs(hero.x - termX) < 90;
             if (near && termCd <= 0 && Pressed(ACT_USE) && bossProblem) { state = TERMINAL; wsRunning = false; termMsg.clear(); Fx(snd::FX_TERMINAL); return; }
@@ -637,6 +739,20 @@ private:
             bossDying += dt;
             if (bossDying > 2.4f) { Win(); return; }
         }
+        // the Golem's blocks: a mark, then the fall; landing on the hero hurts
+        for (Rock& r : rocks) {
+            if (r.landed >= 0) { r.landed += dt; continue; }
+            if (r.warn > 0) { r.warn -= dt; if (r.warn <= 0) Fx(snd::FX_ROCK_FALL, 0.6f); continue; }
+            r.vy += 2600 * dt;
+            r.y += r.vy * dt;
+            if (r.y >= kGround - 37) {
+                r.y = kGround - 37;
+                r.landed = 0;
+                shake = std::max(shake, 0.12f);
+                if (std::fabs(hero.x - r.x) < 58 && hero.y > kGround - 190) { HurtHero(hero.x > r.x ? 1 : -1); if (state != PLAY) return; }
+            }
+        }
+        rocks.erase(std::remove_if(rocks.begin(), rocks.end(), [](const Rock& r) { return r.landed > 0.5f; }), rocks.end());
         for (Ring& r : rings) {
             r.x += r.vx * dt;
             r.life -= dt;
@@ -656,6 +772,50 @@ private:
 
     Vector2 BossCenter() const { return {bossX, 330 + std::sin(bossT * 1.3f) * 30}; }
 
+    // The Matrix Golem: it plods to and fro, and every few seconds raises its
+    // arms, either to drop blocks where you stand (move!) or to slam the ground
+    // and send a shockwave along it (jump!).
+    void UpdateGolem(float dt, float L, float vw) {
+        bossX = arenaCam + L + vw * 0.72f + std::sin(bossT * 0.45f) * vw * 0.10f;
+        if (golemAct == 0) {
+            golemPose = std::max(0.0f, golemPose - dt * 2.5f);
+            golemCd -= dt;
+            if (golemCd <= 0) { golemAct = Rand01() < 0.5f ? 1 : 2; golemT = 0; }
+        } else {
+            golemT += dt;
+            golemPose = std::min(1.0f, golemT / 0.5f);
+            if (golemAct == 1 && golemT >= 0.5f) {   // a rain of blocks: one where you stand, one or two elsewhere
+                float lo = arenaCam + L + 240, hi = arenaCam + L + vw - 90;
+                std::vector<float> xs = {std::clamp(hero.x, lo, hi)};
+                int more = GetRandomValue(1, 2);
+                for (int tries = 0; tries < 20 && (int)xs.size() < 1 + more; tries++) {
+                    float x = lo + Rand01() * (hi - lo);
+                    bool apart = true;
+                    for (float o : xs) apart &= std::fabs(o - x) > 150;
+                    if (apart) xs.push_back(x);
+                }
+                for (size_t i = 0; i < xs.size(); i++) {
+                    float warn = 0.7f + 0.3f * i;
+                    int r = GetRandomValue(0, 2), c = GetRandomValue(0, 2);
+                    rocks.push_back({xs[i], -60, 500, warn, warn, GetRandomValue(0, 9), TextFormat("m[%d][%d]", r, c), -1});
+                }
+                Fx(snd::FX_SLAM, 0.4f);
+                golemAct = 0;
+                golemCd = 2.4f + Rand01() * 1.0f;
+            }
+            if (golemAct == 2 && golemT >= 0.6f) {   // the slam
+                rings.push_back({bossX - 150, -380, 6});
+                Fx(snd::FX_SLAM);
+                shake = 0.35f;
+                golemAct = 0;
+                golemCd = 2.0f + Rand01() * 1.0f;
+            }
+        }
+        // walking into it hurts
+        float ddx = hero.x - bossX;
+        if (std::fabs(ddx) < 125 && hero.y > kGround - 330) HurtHero(ddx > 0 ? 1 : -1);
+    }
+
     // A sword hit on a goblin: sometimes (and always on the last hit) a question.
     void Strike(int i) {
         Goblin& g = goblins[i];
@@ -665,7 +825,7 @@ private:
         if (last || Rand01() < 0.4f) { AskQuestion(i, last); return; }
         g.hp--;
         Fx(snd::FX_HIT);
-        Pop("hit", g.x, kGround - 120, Hex(0x4b3fb0));
+        Pop("hit", g.x, kGround - 120 - g.hy, Hex(0x4b3fb0));
     }
 
     // ---------------------------------------------------------------- quiz --
@@ -697,7 +857,7 @@ private:
         DrawRectangleRounded(box, 0.05f, 12, Hex(0x15122b));
         DrawRectangleRoundedLinesEx(box, 0.05f, 12, 2, quizFinal ? Hex(0xff9e4a) : Hex(0x8b7bff));
         Text(quizFinal ? "FINISHING BLOW" : "CRITICAL STRIKE", box.x + 30, box.y + 24, 15, quizFinal ? Hex(0xff9e4a) : Hex(0xb9b0ff), F_BOLD);
-        Text("Answer right and the goblin falls. Wrong, and it strikes back.", box.x + 30, box.y + 46, 13.5f, Hex(0x8f88b8), F_MEDIUM);
+        Text(std::string("Answer right and the ") + kLands[land].enemy + " falls. Wrong, and it strikes back.", box.x + 30, box.y + 46, 13.5f, Hex(0x8f88b8), F_MEDIUM);
         const float limit = 25;
         if (set.questionTimer && picked < 0) {
             float left = std::max(0.0f, limit - quizT);
@@ -776,11 +936,12 @@ private:
         Rectangle top = {W / 2 - 600, 14, 1200, 46};
         DrawRectangleRounded(top, 0.4f, 10, Hex(0x15122b));
         Text("TERMINAL", top.x + 20, top.y + 13, 17, Hex(0x48e5ff), F_MONOBOLD);
-        Text("Every test your code passes hits the Serpent. A compile error lets it strike you.", top.x + 140, top.y + 15, 14, Hex(0xb9b3d9), F_MEDIUM);
-        // the Serpent's health
+        Text(std::string("Every test your code passes hits ") + kLands[land].bossShort + ". A compile error lets it strike you.", top.x + 140, top.y + 15, 14,
+             Hex(0xb9b3d9), F_MEDIUM);
+        // the boss's health
         Rectangle hb = {top.x + top.width - 330, top.y + 17, 200, 12};
         DrawRectangleRounded(hb, 1, 8, Hex(0x2a2550));
-        DrawRectangleRounded({hb.x, hb.y, hb.width * bossHp, hb.height}, 1, 8, Hex(0x3fd1c7));
+        DrawRectangleRounded({hb.x, hb.y, hb.width * bossHp, hb.height}, 1, 8, Hex(kLands[land].bossColor));
         Rectangle back = {top.x + top.width - 116, top.y + 7, 104, 32};
         bool bh = MouseIn(back);
         DrawRectangleRounded(back, 0.4f, 8, bh ? Hex(0x3b3470) : Hex(0x2a2550));
@@ -795,7 +956,7 @@ private:
             wsRunning = false;
             const RunReport& r = ws.Report();
             if (r.status == RunReport::CompileError || r.status == RunReport::RuntimeError || r.status == RunReport::TimeLimit) {
-                termMsg = r.status == RunReport::CompileError ? "It doesn't compile - the Serpent strikes!" : "Your program crashed - the Serpent strikes!";
+                termMsg = std::string(r.status == RunReport::CompileError ? "It doesn't compile - " : "Your program crashed - ") + kLands[land].bossShort + " strikes!";
                 Fx(snd::FX_COMPILE_ERROR);
                 hero.hurt = 0;
                 HurtHero(-1);
@@ -807,7 +968,7 @@ private:
                 bossHurt = 1;
                 Fx(snd::FX_BOSS_HIT);
                 termMsg = std::to_string(gained) + (gained == 1 ? " new test passes" : " new tests pass") + " - a direct hit!";
-                if (bestPassed >= r.total) { bossDying = 0; state = PLAY; snd::StopMusic(); Fx(snd::FX_BOSS_DOWN); shake = 1.0f; return; }
+                if (bestPassed >= r.total) { bossDying = 0; golemPose = 0; state = PLAY; snd::StopMusic(); Fx(snd::FX_BOSS_DOWN); shake = 1.0f; return; }
             } else termMsg = "No new test passes yet. Look at the failing case and try again.";
         }
         if (bh && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) { state = PLAY; termCd = 1.5f; }
@@ -816,7 +977,7 @@ private:
 
     void Win() {
         Fx(snd::FX_VICTORY);
-        chaptersDone = std::max(chaptersDone, 1);
+        chaptersDone = std::max(chaptersDone, land + 1);
         Save();
         state = VICTORY;
         deadT = 0;
@@ -826,9 +987,12 @@ private:
         deadT += dt;
         Draw();
         Shade(Clamp01(deadT / 0.8f) * 0.8f);
-        TextCenter("CHAPTER 1 CLEARED", {0, 300, W, 60}, 52, Fade(Hex(0x48e5a0), Clamp01(deadT)), F_HEAVY);
-        TextCenter("The Infinite Loop Serpent is defeated.", {0, 370, W, 26}, 19, Fade(Hex(0xd8d3f5), Clamp01(deadT)), F_MEDIUM);
-        if (deadT > 1.2f && (IsKeyPressed(KEY_ENTER) || IsMouseButtonPressed(MOUSE_BUTTON_LEFT) || deadT > 4)) StartStory(kAfterChapter1, 3, MENU);
+        TextCenter(TextFormat("CHAPTER %d CLEARED", land + 1), {0, 300, W, 60}, 52, Fade(Hex(0x48e5a0), Clamp01(deadT)), F_HEAVY);
+        TextCenter(std::string("The ") + kLands[land].boss + " is defeated.", {0, 370, W, 26}, 19, Fade(Hex(0xd8d3f5), Clamp01(deadT)), F_MEDIUM);
+        if (deadT > 1.2f && (IsKeyPressed(KEY_ENTER) || IsMouseButtonPressed(MOUSE_BUTTON_LEFT) || deadT > 4)) {
+            if (land == 0) StartStory(kAfterChapter1, 3, CHAPTER, 1);   // on to the Array Canyon
+            else StartStory(kAfterChapter2, 3, MENU);
+        }
     }
 
     // --------------------------------------------------- pause and death --
@@ -858,10 +1022,10 @@ private:
         TextCenter("KERNEL PANIC", {0, 250, W, 70}, 64, Fade(Hex(0xff3d5a), a), F_HEAVY);
         TextCenter("The Debugger has fallen. The bugs win this round.", {0, 330, W, 26}, 19, Fade(Hex(0xd8d3f5), a), F_MEDIUM);
         if (deadT < 0.8f) return;
-        if (Item(W / 2, 400, "Try again", menuSel == 0)) StartChapter();
+        if (Item(W / 2, 400, "Try again", menuSel == 0)) StartChapter(land);
         if (Item(W / 2, 464, "Main menu", menuSel == 1)) { state = MENU; menuSel = 0; snd::PlayMusic("title"); }
         if (IsKeyPressed(KEY_DOWN) || IsKeyPressed(KEY_UP)) menuSel = 1 - std::clamp(menuSel, 0, 1);
-        if (IsKeyPressed(KEY_ENTER)) { Fx(snd::FX_MENU_SELECT); if (menuSel == 0) StartChapter(); else { state = MENU; menuSel = 0; snd::PlayMusic("title"); } }
+        if (IsKeyPressed(KEY_ENTER)) { Fx(snd::FX_MENU_SELECT); if (menuSel == 0) StartChapter(land); else { state = MENU; menuSel = 0; snd::PlayMusic("title"); } }
     }
 
     // ------------------------------------------------------------- drawing --
@@ -869,15 +1033,18 @@ private:
         Rectangle scr = ScreenRect();
         float sx = shake > 0 ? std::sin(t * 90) * shake * 10 : 0;
         float c = cam - sx;
-        fp::DrawStackPlains(c, t);
+        if (land == 0) fp::DrawStackPlains(c, t);
+        else fp::DrawArrayCanyon(c, t);
         auto X = [&](float wx) { return wx - c; };
-        // signposts along the way
-        for (float wx = 600; wx < kLevelLen - 1200; wx += 1400) {
+        // signposts along the way: addresses on the plains, indices in the canyon
+        int post = 0;
+        for (float wx = 600; wx < kLevelLen - 1200; wx += 1400, post++) {
             float x = X(wx);
             if (x < scr.x - 100 || x > scr.x + scr.width + 100) continue;
             DrawRectangle((int)x - 4, (int)kGround - 90, 8, 90, Hex(0x7a4a2a));
             DrawRectangleRounded({x - 60, kGround - 120, 120, 40}, 0.2f, 6, Hex(0xe8d3a8));
-            TextCenter(TextFormat("0x%04X", (int)wx), {x - 60, kGround - 112, 120, 24}, 16, Hex(0x5a3a1a), F_MONOBOLD);
+            const char* label = land == 0 ? TextFormat("0x%04X", (int)wx) : TextFormat("arr[%d]", post);
+            TextCenter(label, {x - 60, kGround - 112, 120, 24}, 16, Hex(0x5a3a1a), F_MONOBOLD);
         }
         // the arena: the terminal and the boss
         if (arena) {
@@ -885,20 +1052,33 @@ private:
             if (bossDying < 0 && std::fabs(hero.x - termX) < 90 && termCd <= 0)
                 TextCenter("Press " + KeyName(set.keys[ACT_USE]) + " to write code", {X(termX) - 150, kGround - 250, 300, 22}, 16, Hex(0x48e5ff), F_BOLD);
         }
-        if (bossAwake) {
+        if (bossAwake && land == 0) {
             Vector2 bc = BossCenter();
             float alpha = bossDying >= 0 ? 1 - Clamp01(bossDying / 2.2f) : 1;
             float radius = 130 + (bossDying >= 0 ? bossDying * 40 : 0);
             fp::DrawSerpent({X(bc.x), bc.y}, radius, t, bossHurt, alpha);
         }
-        for (const Ring& r : rings) fp::DrawLoopRing({X(r.x), kGround - 26}, 26, t);
+        if (bossAwake && land == 1) {   // it falls apart, then fades
+            float crumble = bossDying >= 0 ? Clamp01(bossDying / 1.4f) : 0;
+            float alpha = bossDying >= 0 ? 1 - Clamp01((bossDying - 1.4f) / 0.9f) : 1;
+            fp::DrawGolem({X(bossX), kGround}, 1.0f, t, golemPose, bossHurt, alpha, crumble);
+        }
+        for (const Ring& r : rings) {
+            if (land == 0) fp::DrawLoopRing({X(r.x), kGround - 26}, 26, t);
+            else fp::DrawShockwave({X(r.x), kGround}, t);
+        }
+        for (const Rock& r : rocks) {
+            if (r.landed < 0) fp::DrawDropMarker(X(r.x), t, r.warn > 0 ? 1 - r.warn / r.warn0 : 1, r.label.c_str());
+            if (r.warn <= 0) fp::DrawStoneBlock({X(r.x), r.y}, 74, r.value, r.landed >= 0 ? 1 - Clamp01(r.landed / 0.5f) : 1);
+        }
         // goblins
         for (const Goblin& g : goblins) {
             if (!g.alive) continue;
             float a = g.dying >= 0 ? 1 - Clamp01(g.dying / 0.6f) : 1;
-            fp::DrawGoblin({X(g.x), kGround + (g.dying >= 0 ? g.dying * 30 : 0)}, 1.0f, g.face, g.walk, g.hurt, a);
+            if (land == 0) fp::DrawGoblin({X(g.x), kGround + (g.dying >= 0 ? g.dying * 30 : 0)}, 1.0f, g.face, g.walk, g.hurt, a);
+            else fp::DrawImp({X(g.x), kGround - g.hy + (g.dying >= 0 ? g.dying * 30 : 0)}, 1.0f, g.face, g.hy / 100, g.hurt, a, g.index, t);
             if (g.dying < 0 && g.hp < g.maxHp) {   // a small health bar once hit
-                Rectangle hb = {X(g.x) - 24, kGround - 140, 48, 6};
+                Rectangle hb = {X(g.x) - 24, kGround - (land == 0 ? 140 : 168) - g.hy, 48, 6};
                 DrawRectangleRounded(hb, 1, 6, Hex(0x2a2550));
                 DrawRectangleRounded({hb.x, hb.y, hb.width * g.hp / g.maxHp, hb.height}, 1, 6, Hex(0x6fd15a));
             }
@@ -929,18 +1109,20 @@ private:
         }
         int left = 0;
         for (const Goblin& g : goblins) left += g.alive && g.dying < 0;
-        std::string info = arena ? "Defeat the Infinite Loop Serpent" : (left > 0 ? std::to_string(left) + " goblins ahead" : "Go right, to the guardian");
+        const Land& ld = kLands[land];
+        std::string info = arena ? std::string("Defeat the ") + ld.boss
+                                 : (left > 0 ? std::to_string(left) + " " + (left == 1 ? ld.enemy : ld.enemies) + " ahead" : "Go right, to the guardian");
         const Color sh = Fade(Hex(0x0b0918), 0.6f);
-        TextRight("Stack Plains", scr.x + scr.width - 23, 19, 18, sh, F_HEAVY);
+        TextRight(ld.name, scr.x + scr.width - 23, 19, 18, sh, F_HEAVY);
         TextRight(info, scr.x + scr.width - 23, 43, 13.5f, sh, F_BOLD);
-        TextRight("Stack Plains", scr.x + scr.width - 24, 18, 18, WHITE, F_HEAVY);
+        TextRight(ld.name, scr.x + scr.width - 24, 18, 18, WHITE, F_HEAVY);
         TextRight(info, scr.x + scr.width - 24, 42, 13.5f, WHITE, F_BOLD);
         if (bossAwake && bossDying < 0) {
             Rectangle hb = {W / 2 - 220, 22, 440, 16};
             DrawRectangleRounded(hb, 1, 8, Hex(0x2a2550));
-            DrawRectangleRounded({hb.x, hb.y, hb.width * bossHp, hb.height}, 1, 8, Hex(0x3fd1c7));
-            TextCenter("Infinite Loop Serpent", {hb.x + 1, hb.y + 21, hb.width, 18}, 14, Fade(Hex(0x0b0918), 0.6f), F_BOLD);
-            TextCenter("Infinite Loop Serpent", {hb.x, hb.y + 20, hb.width, 18}, 14, WHITE, F_BOLD);
+            DrawRectangleRounded({hb.x, hb.y, hb.width * bossHp, hb.height}, 1, 8, Hex(ld.bossColor));
+            TextCenter(ld.boss, {hb.x + 1, hb.y + 21, hb.width, 18}, 14, Fade(Hex(0x0b0918), 0.6f), F_BOLD);
+            TextCenter(ld.boss, {hb.x, hb.y + 20, hb.width, 18}, 14, WHITE, F_BOLD);
         }
         if (!arena && hero.x < 800 && state == PLAY)
             TextCenter(KeyName(set.keys[ACT_LEFT]) + "/" + KeyName(set.keys[ACT_RIGHT]) + " to move, " + KeyName(set.keys[ACT_JUMP]) +
