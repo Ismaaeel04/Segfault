@@ -5,6 +5,7 @@
 // ============================================================================
 #pragma once
 #include "raylib.h"
+#include <string>
 
 namespace fp {
 
@@ -27,7 +28,10 @@ void DrawCastle(Rectangle r, float time);
 // The terminal the hero uses to fight a boss.
 void DrawTerminalPillar(Vector2 feet, float time, bool ready, bool near);
 
-// The Stack Plains: sky, parallax hills, floating stack frames and the ground.
+// Loads the pictures the game uses (resources/backgrounds). Call once, with a window open.
+void LoadArt(const std::string& resourceDir);
+
+// The Stack Plains: the painted sky (or hills drawn by hand), floating stack frames and the ground.
 // cam: world x at the screen's left edge.
 void DrawStackPlains(float cam, float time);
 

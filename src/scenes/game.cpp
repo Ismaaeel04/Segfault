@@ -9,6 +9,7 @@
 // Off-by-One Goblins and the Infinite Loop Serpent).
 // ============================================================================
 #include "app/app.h"
+#include "app/sound.h"
 #include "app/theme.h"
 #include "app/ui.h"
 #include "content/content.h"
@@ -28,50 +29,6 @@ namespace {
 Color Hex(unsigned v, unsigned char a = 255) { return {(unsigned char)(v >> 16), (unsigned char)(v >> 8), (unsigned char)v, a}; }
 float Clamp01(float v) { return std::clamp(v, 0.0f, 1.0f); }
 float Rand01() { return GetRandomValue(0, 10000) / 10000.0f; }
-
-// ---------------------------------------------------------------- sounds ---
-// Short tones made in code (no sound files), played at the chosen volume.
-struct Sfx {
-    Sound hit{}, hurt{}, right{}, wrong{}, jump{}, boss{};
-    bool loaded = false;
-
-    static Sound Tone(float f0, float f1, float len, float noise, float vol) {
-        const int rate = 44100, n = (int)(rate * len);
-        std::vector<short> d(n);
-        float phase = 0;
-        for (int i = 0; i < n; i++) {
-            float t = (float)i / n, f = f0 + (f1 - f0) * t;
-            phase += 6.2831853f * f / rate;
-            float v = std::sin(phase) * (1 - noise) + (Rand01() * 2 - 1) * noise;
-            float env = std::min(1.0f, t * 40) * (1 - t) * (1 - t);
-            d[i] = (short)(std::clamp(v * env * vol, -1.0f, 1.0f) * 32767);
-        }
-        Wave w = {};
-        w.frameCount = (unsigned)n;
-        w.sampleRate = rate;
-        w.sampleSize = 16;
-        w.channels = 1;
-        w.data = d.data();
-        return LoadSoundFromWave(w);
-    }
-    void Load() {
-        if (loaded || std::getenv("SEGFAULT_MUTE")) return;
-        if (!IsAudioDeviceReady()) InitAudioDevice();
-        if (!IsAudioDeviceReady()) return;
-        hit = Tone(520, 180, 0.12f, 0.45f, 0.5f);
-        hurt = Tone(220, 90, 0.25f, 0.3f, 0.6f);
-        right = Tone(660, 1320, 0.30f, 0, 0.45f);
-        wrong = Tone(300, 140, 0.35f, 0.1f, 0.5f);
-        jump = Tone(380, 760, 0.10f, 0, 0.3f);
-        boss = Tone(90, 50, 0.6f, 0.5f, 0.7f);
-        loaded = true;
-    }
-    void Play(Sound& s, float volume) {
-        if (!loaded || volume <= 0) return;
-        SetSoundVolume(s, volume);
-        PlaySound(s);
-    }
-};
 
 // --------------------------------------------------------------- settings ---
 enum Action { ACT_LEFT, ACT_RIGHT, ACT_JUMP, ACT_ATTACK, ACT_USE, ACT_COUNT };
@@ -105,7 +62,8 @@ struct Settings {
     int keys[ACT_COUNT] = {KEY_A, KEY_D, KEY_SPACE, KEY_J, KEY_E};
     int difficulty = 1;          // 0 easy (7 hearts), 1 normal (5), 2 hard (3)
     bool questionTimer = true;   // 25 s to answer
-    float volume = 0.6f;
+    float volume = 0.6f;         // sound effects
+    float music = 0.5f;          // 0 = no music
     int Hearts() const { return difficulty == 0 ? 7 : difficulty == 1 ? 5 : 3; }
 };
 
@@ -158,16 +116,20 @@ public:
 
     void Enter(const std::string& param) override {
         LoadSave();
+        fp::LoadArt(app.resourceDir);
         state = MENU;
         menuSel = 0;
         t = 0;
-        sfx.Load();
+        snd::SetMusicVolume(set.music);
+        snd::PlayMusic("title");
+        for (const char* id : {"story", "plains", "boss", "gameover"}) snd::Preload(id);   // ready before they are needed
         // --shot hooks, to check each screen from the command line
         if (param == "settings") state = SETTINGS;
         else if (param == "story") StartStory(kIntro, 4, CHAPTER), panelIdx = 2, panelT = 100;
         else if (param == "play" || param == "quiz" || param == "boss" || param == "terminal") {
             ResetLevel();
             state = PLAY;
+            snd::PlayMusic("plains");
             if (param == "quiz") { hero.x = 900; AskQuestion(0, false); }
             if (param == "boss" || param == "terminal") { goblins.clear(); hero.x = kLevelLen - 600; Update(0.016f); bossT = 2; ringCd = 0; Update(0.5f); }
             if (param == "terminal") state = TERMINAL;
@@ -195,7 +157,6 @@ private:
     State state = MENU, settingsBack = MENU;
     float t = 0;
     Settings set;
-    Sfx sfx;
     int chaptersDone = 0;   // saved progress
     int menuSel = 0;
     // settings screen
@@ -231,6 +192,8 @@ private:
     std::string termMsg;
     float deadT = 0;
 
+    void Fx(snd::Fx f, float scale = 1) const { snd::PlayFx(f, set.volume * scale); }
+
     // ------------------------------------------------------------ saving --
     std::string SavePath() const {
         return (app.userDir.empty() ? app.dataDir : app.userDir) + "forgotten_pointer.txt";
@@ -243,10 +206,12 @@ private:
             else if (k == "difficulty") in >> set.difficulty;
             else if (k == "timer") in >> set.questionTimer;
             else if (k == "volume") in >> set.volume;
+            else if (k == "music") in >> set.music;
             else if (k == "key") { int a, v; in >> a >> v; if (a >= 0 && a < ACT_COUNT && v > 0) set.keys[a] = v; }
         }
         set.difficulty = std::clamp(set.difficulty, 0, 2);
         set.volume = Clamp01(set.volume);
+        set.music = Clamp01(set.music);
     }
     void Save() const {
         std::ofstream out(SavePath());
@@ -254,6 +219,7 @@ private:
         out << "difficulty " << set.difficulty << "\n";
         out << "timer " << (set.questionTimer ? 1 : 0) << "\n";
         out << "volume " << set.volume << "\n";
+        out << "music " << set.music << "\n";
         for (int a = 0; a < ACT_COUNT; a++) out << "key " << a << " " << set.keys[a] << "\n";
     }
 
@@ -277,7 +243,7 @@ private:
         float w = 360, h = 54;
         Rectangle r = {cx - w / 2, y, w, h};
         bool hover = enabled && MouseIn(r);
-        if (hover && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) return true;
+        if (hover && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) { Fx(snd::FX_MENU_SELECT); return true; }
         bool on = enabled && (selected || hover);
         if (on) {
             DrawRectangleRounded(r, 0.5f, 12, Fade(Hex(0x8b7bff), 0.28f));
@@ -294,7 +260,7 @@ private:
     void Shade(float a) { DrawRectangleRec(ScreenRect(), Fade(Hex(0x07060d), a)); }
 
     void TitleBackdrop() {
-        fp::DrawStackPlains(t * 40, t);
+        fp::DrawStackPlains((0.5f - 0.5f * std::cos(t * 0.05f)) * 2600, t);   // drifts back and forth
         // the hero, standing at the edge of the plains
         fp::DrawHero({ScreenRect().x + 220, kGround}, 1.3f, 1, 0, -1, t, false);
     }
@@ -302,13 +268,17 @@ private:
     // -------------------------------------------------------------- menu --
     void Menu(float) {
         TitleBackdrop();
-        Shade(0.35f);
+        Rectangle scr = ScreenRect();   // darker at the top, where the title is
+        DrawRectangleGradientV((int)scr.x, 0, (int)scr.width + 1, (int)H, Fade(Hex(0x120f26), 0.62f), Fade(Hex(0x120f26), 0.18f));
         const float cx = W / 2;
         // the title
         float bob = std::sin(t * 1.3f) * 4;
-        TextCenter("THE FORGOTTEN", {0, 110 + bob, W, 50}, 44, Hex(0xb9b0ff), F_HEAVY);
+        const Color shadow = Fade(Hex(0x0b0918), 0.55f);
+        TextCenter("THE FORGOTTEN", {3, 113 + bob, W, 50}, 44, shadow, F_HEAVY);
+        TextCenter("POINTER", {4, 156 + bob, W, 100}, 92, shadow, F_HEAVY);
+        TextCenter("THE FORGOTTEN", {0, 110 + bob, W, 50}, 44, Hex(0xd3ccff), F_HEAVY);
         TextCenter("POINTER", {0, 152 + bob, W, 100}, 92, WHITE, F_HEAVY);
-        TextCenter("A SegFault story", {0, 260, W, 24}, 17, Hex(0xd8d3f5), F_MEDIUM);
+        TextCenter("A SegFault story", {0, 260, W, 24}, 17, Hex(0xe6e1ff), F_MEDIUM);
         if (state != MENU) return;
 
         struct Entry { const char* label; bool enabled; int id; };
@@ -319,6 +289,7 @@ private:
         items.push_back({"Settings", true, 3});
         items.push_back({"Quit to desktop", true, 4});
         menuSel = std::clamp(menuSel, 0, (int)items.size() - 1);
+        int before = menuSel;
         if (IsKeyPressed(KEY_DOWN) || IsKeyPressed(KEY_S)) menuSel = (menuSel + 1) % items.size();
         if (IsKeyPressed(KEY_UP) || IsKeyPressed(KEY_W)) menuSel = (menuSel + (int)items.size() - 1) % items.size();
         int chosen = -1;
@@ -328,7 +299,8 @@ private:
             if (MouseIn(r)) menuSel = (int)i;
             if (Item(cx, y, items[i].label, (int)i == menuSel, items[i].enabled)) chosen = items[i].id;
         }
-        if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_KP_ENTER)) chosen = items[menuSel].id;
+        if (menuSel != before) Fx(snd::FX_MENU_MOVE);
+        if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_KP_ENTER)) { chosen = items[menuSel].id; Fx(snd::FX_MENU_SELECT); }
         TextCenter("Arrows / mouse to choose, Enter to start", {0, H - 46, W, 20}, 13, Hex(0x8f88b8), F_MEDIUM);
 
         switch (chosen) {
@@ -358,6 +330,7 @@ private:
     }
 
     void Leave() {
+        snd::StopMusic();
         if (app.hasReturn) app.Go(app.returnScene, app.returnParam);
         else app.Go(SceneId::Desktop, app.user.empty() ? "login" : "home");
     }
@@ -366,56 +339,61 @@ private:
     void SettingsScreen() {
         TitleBackdrop();
         Shade(0.72f);
-        TextCenter("Settings", {0, 70, W, 50}, 40, WHITE, F_HEAVY);
-        const float x0 = W / 2 - 300, w = 600;
-        float y = 150;
+        TextCenter("Settings", {0, 54, W, 50}, 38, WHITE, F_HEAVY);
+        const float x0 = W / 2 - 300, w = 600, rh = 42, step = 47;
+        float y = 120;
         // controls
-        Text("CONTROLS", x0, y, 14, Hex(0x8f88b8), F_BOLD);
-        y += 28;
+        Text("CONTROLS", x0, y, 13, Hex(0x8f88b8), F_BOLD);
+        y += 24;
         for (int a = 0; a < ACT_COUNT; a++) {
-            Rectangle row = {x0, y, w, 46};
+            Rectangle row = {x0, y, w, rh};
             bool hover = MouseIn(row);
             DrawRectangleRounded(row, 0.3f, 8, Fade(Hex(0x2a2550), hover ? 0.9f : 0.6f));
-            Text(kActionName[a], row.x + 18, row.y + 13, 17, Hex(0xe6e1ff), F_MEDIUM);
+            Text(kActionName[a], row.x + 18, row.y + 11, 16.5f, Hex(0xe6e1ff), F_MEDIUM);
             std::string k = rebinding == a ? "press a key..." : KeyName(set.keys[a]);
             if (a == ACT_LEFT) k += rebinding == a ? "" : "  /  Left";
             if (a == ACT_RIGHT) k += rebinding == a ? "" : "  /  Right";
             if (a == ACT_JUMP) k += rebinding == a ? "" : "  /  Up";
             if (a == ACT_ATTACK) k += rebinding == a ? "" : "  /  Mouse";
-            TextRight(k, row.x + row.width - 18, row.y + 13, 17, rebinding == a ? Hex(0xff9e4a) : Hex(0xb9b0ff), F_BOLD);
+            TextRight(k, row.x + row.width - 18, row.y + 11, 16.5f, rebinding == a ? Hex(0xff9e4a) : Hex(0xb9b0ff), F_BOLD);
             if (hover) WantHand();
             if (hover && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && rebinding < 0) rebinding = a;
-            y += 52;
+            y += step;
         }
         if (rebinding >= 0) {
             int k = GetKeyPressed();
             if (k == KEY_ESCAPE) rebinding = -1;
             else if (k > 0) { set.keys[rebinding] = k; rebinding = -1; Save(); }
         }
-        y += 14;
-        Text("GAME", x0, y, 14, Hex(0x8f88b8), F_BOLD);
-        y += 28;
-        // difficulty
+        y += 10;
+        Text("GAME", x0, y, 13, Hex(0x8f88b8), F_BOLD);
+        y += 24;
         const char* diff[3] = {"Easy  (7 hearts)", "Normal  (5 hearts)", "Hard  (3 hearts)"};
-        if (Cycle({x0, y, w, 46}, "Difficulty", diff[set.difficulty])) { set.difficulty = (set.difficulty + 1) % 3; Save(); }
-        y += 52;
-        if (Cycle({x0, y, w, 46}, "Question timer", set.questionTimer ? "On  (25 s)" : "Off")) { set.questionTimer = !set.questionTimer; Save(); }
-        y += 52;
-        // volume: click the bar
-        Rectangle row = {x0, y, w, 46};
+        if (Cycle({x0, y, w, rh}, "Difficulty", diff[set.difficulty])) { set.difficulty = (set.difficulty + 1) % 3; Save(); }
+        y += step;
+        if (Cycle({x0, y, w, rh}, "Question timer", set.questionTimer ? "On  (25 s)" : "Off")) { set.questionTimer = !set.questionTimer; Save(); }
+        y += step;
+        if (Slider({x0, y, w, rh}, "Music", set.music)) { snd::SetMusicVolume(set.music); Save(); }
+        snd::SetMusicVolume(set.music);   // follows the bar while it is dragged
+        y += step;
+        if (Slider({x0, y, w, rh}, "Sound effects", set.volume)) { Save(); Fx(snd::FX_RIGHT); }
+        y += 60;
+        if (Item(W / 2, y, "Back", false) || (rebinding < 0 && IsKeyPressed(KEY_ESCAPE))) { Save(); state = settingsBack; }
+    }
+
+    // A volume bar: drag it. True when the mouse lets go (time to save).
+    bool Slider(Rectangle row, const char* label, float& value) {
         DrawRectangleRounded(row, 0.3f, 8, Fade(Hex(0x2a2550), 0.6f));
-        Text("Sound", row.x + 18, row.y + 13, 17, Hex(0xe6e1ff), F_MEDIUM);
-        Rectangle bar = {row.x + w - 260, row.y + 19, 200, 8};
+        Text(label, row.x + 18, row.y + 11, 16.5f, Hex(0xe6e1ff), F_MEDIUM);
+        Rectangle bar = {row.x + row.width - 260, row.y + row.height / 2 - 4, 200, 8};
         DrawRectangleRounded(bar, 1, 8, Hex(0x3b3470));
-        DrawRectangleRounded({bar.x, bar.y, bar.width * set.volume, bar.height}, 1, 8, Hex(0x8b7bff));
-        DrawCircleV({bar.x + bar.width * set.volume, bar.y + 4}, 9, WHITE);
-        TextRight(std::to_string((int)std::lround(set.volume * 100)) + "%", row.x + w - 18, row.y + 13, 16, Hex(0xb9b0ff), F_BOLD);
+        DrawRectangleRounded({bar.x, bar.y, bar.width * value, bar.height}, 1, 8, Hex(0x8b7bff));
+        DrawCircleV({bar.x + bar.width * value, bar.y + 4}, 9, WHITE);
+        TextRight(std::to_string((int)std::lround(value * 100)) + "%", row.x + row.width - 18, row.y + 11, 15.5f, Hex(0xb9b0ff), F_BOLD);
         Rectangle hit = {bar.x - 10, row.y, bar.width + 20, row.height};
         if (MouseIn(hit)) WantHand();
-        if (MouseIn(hit) && IsMouseButtonDown(MOUSE_BUTTON_LEFT)) set.volume = Clamp01((Mouse().x - bar.x) / bar.width);
-        if (MouseIn(hit) && IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) { Save(); sfx.Play(sfx.right, set.volume); }
-        y += 70;
-        if (Item(W / 2, y, "Back", false) || (rebinding < 0 && IsKeyPressed(KEY_ESCAPE))) { Save(); state = settingsBack; }
+        if (MouseIn(hit) && IsMouseButtonDown(MOUSE_BUTTON_LEFT)) value = Clamp01((Mouse().x - bar.x) / bar.width);
+        return MouseIn(hit) && IsMouseButtonReleased(MOUSE_BUTTON_LEFT);
     }
 
     bool Cycle(Rectangle row, const char* label, const char* value) {
@@ -435,6 +413,7 @@ private:
         panelT = 0;
         afterStory = after;
         state = STORY;
+        snd::PlayMusic("story");
     }
 
     void Story(float dt) {
@@ -489,6 +468,7 @@ private:
 
     // ------------------------------------------------------- chapter card --
     void StartChapter() {
+        snd::PlayMusic("plains");
         state = CHAPTER;
         chapterT = 0;
         ResetLevel();
@@ -554,9 +534,9 @@ private:
         hero.grounded = false;
         hero.x += fromDir * 60;
         shake = 0.3f;
-        sfx.Play(sfx.hurt, set.volume);
+        Fx(snd::FX_HURT);
         Pop("-1", hero.x, hero.y - 205, Hex(0xff5c7a));
-        if (hero.hearts <= 0) { state = DEAD; deadT = 0; }
+        if (hero.hearts <= 0) { state = DEAD; deadT = 0; snd::PlayMusic("gameover"); }
     }
 
     void Update(float dt) {
@@ -568,7 +548,7 @@ private:
         if (move != 0) hero.face = move > 0 ? 1 : -1;
         hero.x += move * 340 * dt;
         hero.walk = move != 0 && hero.grounded ? hero.walk + dt * 11 : 0;
-        if (Pressed(ACT_JUMP) && hero.grounded) { hero.vy = -820; hero.grounded = false; sfx.Play(sfx.jump, set.volume * 0.6f); }
+        if (Pressed(ACT_JUMP) && hero.grounded) { hero.vy = -820; hero.grounded = false; Fx(snd::FX_JUMP, 0.7f); }
         hero.vy += 2300 * dt;
         hero.y += hero.vy * dt;
         if (hero.y >= kGround) { hero.y = kGround; hero.vy = 0; hero.grounded = true; }
@@ -584,6 +564,7 @@ private:
         if (Pressed(ACT_ATTACK) && hero.attackCd <= 0) {
             hero.attack = 0;
             hero.attackCd = 0.35f;
+            Fx(snd::FX_SWING);
             for (size_t i = 0; i < goblins.size(); i++) {
                 Goblin& g = goblins[i];
                 float dx = (g.x - hero.x) * hero.face;
@@ -625,9 +606,10 @@ private:
             bossT = 0;
             ringCd = 2.5f;
             termCd = 0;
-            sfx.Play(sfx.boss, set.volume);
+            Fx(snd::FX_ROAR);
+            snd::PlayMusic("boss");
             shake = 0.6f;
-            Pop("The Infinite Loop Serpent awakens!", hero.x, hero.y - 220, Hex(0x9ff5ea));
+            Pop("The Infinite Loop Serpent awakens!", hero.x, hero.y - 220, Hex(0x0f7f73));
             bossAwake = true;
         }
         if (bossAwake && bossDying < 0) {
@@ -640,6 +622,7 @@ private:
             ringCd -= dt;
             if (ringCd <= 0) {
                 rings.push_back({bossX - 120, -(300.0f + GetRandomValue(0, 140)), 6});
+                Fx(snd::FX_SPIT, 0.8f);
                 ringCd = 1.6f + Rand01() * 1.2f;
             }
             // touching the coil hurts
@@ -648,7 +631,7 @@ private:
             if (ddx * ddx + ddy * ddy < 170.0f * 170.0f) HurtHero(ddx > 0 ? 1 : -1);
             termCd = std::max(0.0f, termCd - dt);
             bool near = std::fabs(hero.x - termX) < 90;
-            if (near && termCd <= 0 && Pressed(ACT_USE) && bossProblem) { state = TERMINAL; wsRunning = false; termMsg.clear(); return; }
+            if (near && termCd <= 0 && Pressed(ACT_USE) && bossProblem) { state = TERMINAL; wsRunning = false; termMsg.clear(); Fx(snd::FX_TERMINAL); return; }
         }
         if (bossDying >= 0) {
             bossDying += dt;
@@ -676,13 +659,13 @@ private:
     // A sword hit on a goblin: sometimes (and always on the last hit) a question.
     void Strike(int i) {
         Goblin& g = goblins[i];
-        sfx.Play(sfx.hit, set.volume);
         g.hurt = 1;
         g.x += hero.face * 26;
         bool last = g.hp <= 1;
         if (last || Rand01() < 0.4f) { AskQuestion(i, last); return; }
         g.hp--;
-        Pop("hit", g.x, kGround - 120, Hex(0xd8d3f5));
+        Fx(snd::FX_HIT);
+        Pop("hit", g.x, kGround - 120, Hex(0x4b3fb0));
     }
 
     // ---------------------------------------------------------------- quiz --
@@ -699,6 +682,7 @@ private:
         quizFinal = final;
         quizT = 0;
         state = QUIZ;
+        Fx(snd::FX_QUIZ);
     }
 
     void Quiz(float dt) {
@@ -766,7 +750,7 @@ private:
         picked = i;
         quizRight = i >= 0 && order[i] == 0;
         answeredAt = (float)GetTime();
-        sfx.Play(quizRight ? sfx.right : sfx.wrong, set.volume);
+        Fx(quizRight ? snd::FX_RIGHT : snd::FX_WRONG);
     }
 
     void ResolveQuiz() {
@@ -774,8 +758,9 @@ private:
         Goblin& g = goblins[quizTarget];
         if (quizRight) {
             g.hp = quizFinal ? 0 : std::max(0, g.hp - 2);   // a critical hit
-            Pop(quizFinal ? "Finished!" : "CRITICAL!", g.x, kGround - 140, Hex(0xffc14d));
-            if (g.hp <= 0) g.dying = 0;
+            Pop(quizFinal ? "Finished!" : "CRITICAL!", g.x, kGround - 140, Hex(0xe07800));
+            if (g.hp <= 0) { g.dying = 0; Fx(snd::FX_KILL); }
+            else Fx(snd::FX_CRIT);
             shake = 0.15f;
         } else {
             g.hp = std::min(g.maxHp, g.hp + 1);   // it shrugs the hit off and strikes back
@@ -811,6 +796,7 @@ private:
             const RunReport& r = ws.Report();
             if (r.status == RunReport::CompileError || r.status == RunReport::RuntimeError || r.status == RunReport::TimeLimit) {
                 termMsg = r.status == RunReport::CompileError ? "It doesn't compile - the Serpent strikes!" : "Your program crashed - the Serpent strikes!";
+                Fx(snd::FX_COMPILE_ERROR);
                 hero.hurt = 0;
                 HurtHero(-1);
                 if (state == DEAD) return;
@@ -819,9 +805,9 @@ private:
                 bestPassed = r.passed;
                 bossHp = 1 - (float)bestPassed / r.total;
                 bossHurt = 1;
-                sfx.Play(sfx.hit, set.volume);
+                Fx(snd::FX_BOSS_HIT);
                 termMsg = std::to_string(gained) + (gained == 1 ? " new test passes" : " new tests pass") + " - a direct hit!";
-                if (bestPassed >= r.total) { bossDying = 0; state = PLAY; sfx.Play(sfx.boss, set.volume); shake = 1.0f; return; }
+                if (bestPassed >= r.total) { bossDying = 0; state = PLAY; snd::StopMusic(); Fx(snd::FX_BOSS_DOWN); shake = 1.0f; return; }
             } else termMsg = "No new test passes yet. Look at the failing case and try again.";
         }
         if (bh && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) { state = PLAY; termCd = 1.5f; }
@@ -829,6 +815,7 @@ private:
     }
 
     void Win() {
+        Fx(snd::FX_VICTORY);
         chaptersDone = std::max(chaptersDone, 1);
         Save();
         state = VICTORY;
@@ -849,8 +836,8 @@ private:
         Shade(0.6f);
         TextCenter("Paused", {0, 200, W, 60}, 48, WHITE, F_HEAVY);
         const char* items[3] = {"Resume", "Settings", "Main menu"};
-        if (IsKeyPressed(KEY_DOWN)) menuSel = (menuSel + 1) % 3;
-        if (IsKeyPressed(KEY_UP)) menuSel = (menuSel + 2) % 3;
+        if (IsKeyPressed(KEY_DOWN)) { menuSel = (menuSel + 1) % 3; Fx(snd::FX_MENU_MOVE); }
+        if (IsKeyPressed(KEY_UP)) { menuSel = (menuSel + 2) % 3; Fx(snd::FX_MENU_MOVE); }
         int chosen = -1;
         for (int i = 0; i < 3; i++) {
             float y = 300 + i * 64;
@@ -861,7 +848,7 @@ private:
         if (IsKeyPressed(KEY_ESCAPE)) chosen = 0;
         if (chosen == 0) state = PLAY;
         if (chosen == 1) { settingsBack = PAUSE; state = SETTINGS; rebinding = -1; }
-        if (chosen == 2) { state = MENU; menuSel = 0; }
+        if (chosen == 2) { state = MENU; menuSel = 0; snd::PlayMusic("title"); }
     }
 
     void Dead(float dt) {
@@ -872,9 +859,9 @@ private:
         TextCenter("The Debugger has fallen. The bugs win this round.", {0, 330, W, 26}, 19, Fade(Hex(0xd8d3f5), a), F_MEDIUM);
         if (deadT < 0.8f) return;
         if (Item(W / 2, 400, "Try again", menuSel == 0)) StartChapter();
-        if (Item(W / 2, 464, "Main menu", menuSel == 1)) { state = MENU; menuSel = 0; }
+        if (Item(W / 2, 464, "Main menu", menuSel == 1)) { state = MENU; menuSel = 0; snd::PlayMusic("title"); }
         if (IsKeyPressed(KEY_DOWN) || IsKeyPressed(KEY_UP)) menuSel = 1 - std::clamp(menuSel, 0, 1);
-        if (IsKeyPressed(KEY_ENTER)) { if (menuSel == 0) StartChapter(); else { state = MENU; menuSel = 0; } }
+        if (IsKeyPressed(KEY_ENTER)) { Fx(snd::FX_MENU_SELECT); if (menuSel == 0) StartChapter(); else { state = MENU; menuSel = 0; snd::PlayMusic("title"); } }
     }
 
     // ------------------------------------------------------------- drawing --
@@ -920,12 +907,17 @@ private:
         bool blink = hero.hurt > 0 && std::fmod(hero.hurt, 0.16f) < 0.08f;
         fp::DrawHero({X(hero.x), hero.y}, 1.0f, hero.face, hero.walk, hero.attack, t, blink);
         for (const Popup& p : popups)
-            TextCenter(p.text, {X(p.x) - 200, p.y - p.age * 50, 400, 30}, 22, Fade(p.col, 1 - p.age / 1.4f), F_HEAVY);
+        {
+            float a = 1 - p.age / 1.4f;
+            TextCenter(p.text, {X(p.x) - 198, p.y - p.age * 50 + 2, 400, 30}, 22, Fade(Hex(0x0b0918), 0.6f * a), F_HEAVY);
+            TextCenter(p.text, {X(p.x) - 200, p.y - p.age * 50, 400, 30}, 22, Fade(p.col, a), F_HEAVY);
+        }
         Hud();
     }
 
     void Hud() {
         Rectangle scr = ScreenRect();
+        DrawRectangleGradientV((int)scr.x, 0, (int)scr.width + 1, 96, Fade(Hex(0x120f26), 0.45f), Fade(Hex(0x120f26), 0));
         float x = scr.x + 24;
         for (int i = 0; i < set.Hearts(); i++) {
             bool full = i < hero.hearts;
@@ -938,13 +930,17 @@ private:
         int left = 0;
         for (const Goblin& g : goblins) left += g.alive && g.dying < 0;
         std::string info = arena ? "Defeat the Infinite Loop Serpent" : (left > 0 ? std::to_string(left) + " goblins ahead" : "Go right, to the guardian");
+        const Color sh = Fade(Hex(0x0b0918), 0.6f);
+        TextRight("Stack Plains", scr.x + scr.width - 23, 19, 18, sh, F_HEAVY);
+        TextRight(info, scr.x + scr.width - 23, 43, 13.5f, sh, F_BOLD);
         TextRight("Stack Plains", scr.x + scr.width - 24, 18, 18, WHITE, F_HEAVY);
-        TextRight(info, scr.x + scr.width - 24, 42, 13.5f, Hex(0xd8d3f5), F_MEDIUM);
+        TextRight(info, scr.x + scr.width - 24, 42, 13.5f, WHITE, F_BOLD);
         if (bossAwake && bossDying < 0) {
             Rectangle hb = {W / 2 - 220, 22, 440, 16};
             DrawRectangleRounded(hb, 1, 8, Hex(0x2a2550));
             DrawRectangleRounded({hb.x, hb.y, hb.width * bossHp, hb.height}, 1, 8, Hex(0x3fd1c7));
-            TextCenter("Infinite Loop Serpent", {hb.x, hb.y + 20, hb.width, 18}, 14, Hex(0x9ff5ea), F_BOLD);
+            TextCenter("Infinite Loop Serpent", {hb.x + 1, hb.y + 21, hb.width, 18}, 14, Fade(Hex(0x0b0918), 0.6f), F_BOLD);
+            TextCenter("Infinite Loop Serpent", {hb.x, hb.y + 20, hb.width, 18}, 14, WHITE, F_BOLD);
         }
         if (!arena && hero.x < 800 && state == PLAY)
             TextCenter(KeyName(set.keys[ACT_LEFT]) + "/" + KeyName(set.keys[ACT_RIGHT]) + " to move, " + KeyName(set.keys[ACT_JUMP]) +

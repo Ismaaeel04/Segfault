@@ -150,8 +150,10 @@ void DrawSerpent(Vector2 c, float R, float time, float hurt, float alpha) {
     // fangs and a flickering tongue
     DrawLineEx(snout, {snout.x - fwd.x * hr * 0.6f + out.x * hr * 0.2f * std::sin(time * 14),
                        snout.y - fwd.y * hr * 0.6f + out.y * hr * 0.2f * std::sin(time * 14)}, 4, Fade2(Hex(0xff4d6d), alpha));
-    // while(1) floating in the middle
-    TextCenter("while (1)", {c.x - R, c.y - 14, R * 2, 28}, std::max(12.0f, R * 0.16f), Fade2(Hex(0x9ff5ea), 0.9f * alpha), F_MONOBOLD);
+    // while(1) floating in the middle, on a dark pill so it reads on any sky
+    float fs = std::max(12.0f, R * 0.16f), tw = Measure("while (1)", fs, F_MONOBOLD).x + 24;
+    DrawRectangleRounded({c.x - tw / 2, c.y - fs * 0.8f, tw, fs * 1.6f}, 1, 12, Fade2(Hex(0x101024), 0.7f * alpha));
+    TextCenter("while (1)", {c.x - R, c.y - 14, R * 2, 28}, fs, Fade2(Hex(0x9ff5ea), alpha), F_MONOBOLD);
 }
 
 void DrawLoopRing(Vector2 c, float r, float time) {
@@ -244,32 +246,58 @@ void DrawTerminalPillar(Vector2 feet, float time, bool ready, bool near) {
 }
 
 // ------------------------------------------------------------ Stack Plains ---
+namespace {
+Texture2D gPlains = {};
+bool gPlainsTried = false;
+}
+
+void LoadArt(const std::string& resourceDir) {
+    if (gPlainsTried) return;
+    gPlainsTried = true;
+    Image img = LoadImage((resourceDir + "/backgrounds/stack_plains.png").c_str());
+    if (!img.data) return;   // no picture: the plains are drawn by hand instead
+    gPlains = LoadTextureFromImage(img);
+    UnloadImage(img);
+    GenTextureMipmaps(&gPlains);   // drawn smaller than it is: keep it smooth
+    SetTextureFilter(gPlains, TEXTURE_FILTER_TRILINEAR);
+}
+
+// The painted backdrop, drifting slowly (parallax). It is drawn bigger than
+// the screen plus all the drift a level needs, so on a 16:9 screen its edge
+// never shows; wider screens get a mirrored copy, so the edges still meet.
+// Its grass sits just above the ground line; the top of its sky is cut.
+static void PaintedSky(float cam, Rectangle scr) {
+    const float h = 1000, w = h * gPlains.width / gPlains.height, top = H - h;
+    float off = std::fmod(cam * 0.06f, 2 * w);
+    if (off < 0) off += 2 * w;
+    for (int k = -1; k < 4; k++) {
+        float x = scr.x - off + k * w;
+        if (x > scr.x + scr.width || x + w < scr.x) continue;
+        bool flip = ((k % 2) + 2) % 2 == 1;
+        Rectangle src = {0, 0, (float)gPlains.width * (flip ? -1 : 1), (float)gPlains.height};
+        DrawTexturePro(gPlains, src, {x, top, w + 1, h}, {0, 0}, 0, WHITE);
+    }
+}
+
 void DrawStackPlains(float cam, float time) {
     Rectangle scr = ScreenRect();
     const float L = scr.x, R = scr.x + scr.width;
-    // sky: dusk over the machine
-    DrawRectangleGradientV((int)L, 0, (int)scr.width + 1, (int)kGround, Hex(0x1b1640), Hex(0x6a3f8a));
-    Glow({L + scr.width * 0.72f - cam * 0.02f, 210}, 200, Hex(0xffb36b), 0.55f);   // a low sun
-    DrawCircleV({L + scr.width * 0.72f - cam * 0.02f, 210}, 64, Hex(0xffd29a));
-    // stars
-    for (int i = 0; i < 60; i++) {
-        float x = std::fmod(i * 197.3f - cam * 0.03f, scr.width + 40);
-        if (x < 0) x += scr.width + 40;
-        float y = std::fmod(i * 71.7f, 300) + 20;
-        float tw = 0.4f + 0.6f * std::fabs(std::sin(time * 0.8f + i));
-        DrawCircleV({L + x - 20, y}, 1.4f, Fade2(WHITE, 0.5f * tw));
+    const bool painted = gPlains.id != 0;
+    if (painted) PaintedSky(cam, scr);
+    else {   // by hand: a dusk sky, a sun and layers of hills
+        DrawRectangleGradientV((int)L, 0, (int)scr.width + 1, (int)kGround, Hex(0x1b1640), Hex(0x6a3f8a));
+        Glow({L + scr.width * 0.72f - cam * 0.02f, 210}, 200, Hex(0xffb36b), 0.55f);
+        DrawCircleV({L + scr.width * 0.72f - cam * 0.02f, 210}, 64, Hex(0xffd29a));
+        struct Layer { float speed, base, amp, freq; unsigned col; };
+        const Layer layers[3] = {{0.15f, 470, 80, 0.004f, 0x3a2a6b}, {0.35f, 540, 55, 0.007f, 0x2f2a5e}, {0.6f, 600, 30, 0.011f, 0x24304f}};
+        for (const Layer& ly : layers)
+            for (float x = L; x < R; x += 6) {
+                float wx = x + cam * ly.speed;
+                float hh = ly.base - ly.amp * (0.6f * std::sin(wx * ly.freq) + 0.4f * std::sin(wx * ly.freq * 2.3f + 1.7f));
+                DrawRectangle((int)x, (int)hh, 7, (int)(kGround - hh) + 1, Hex(ly.col));
+            }
     }
-    // far mountains, then hills: each layer moves slower the further it is
-    struct Layer { float speed, base, amp, freq; unsigned col; };
-    const Layer layers[3] = {{0.15f, 470, 80, 0.004f, 0x3a2a6b}, {0.35f, 540, 55, 0.007f, 0x2f2a5e}, {0.6f, 600, 30, 0.011f, 0x24304f}};
-    for (const Layer& ly : layers) {
-        for (float x = L; x < R; x += 6) {
-            float wx = x + cam * ly.speed;
-            float h = ly.base - ly.amp * (0.6f * std::sin(wx * ly.freq) + 0.4f * std::sin(wx * ly.freq * 2.3f + 1.7f));
-            DrawRectangle((int)x, (int)h, 7, (int)(kGround - h) + 1, Hex(ly.col));
-        }
-    }
-    // floating stack frames: little piles of plates drifting in the sky
+    // floating stack frames: little piles of plates drifting in the sky (pale, like the clouds, by day)
     for (int i = 0; i < 7; i++) {
         float wx = i * 640.0f + 200;
         float x = wx - cam * 0.45f;
@@ -279,22 +307,29 @@ void DrawStackPlains(float cam, float time) {
         int n = 2 + i % 3;
         for (int k = 0; k < n; k++) {
             Rectangle pl = {x - 46 + k * 4, y - k * 16, 92 - k * 8, 13};
-            DrawRectangleRounded(pl, 0.5f, 6, Fade2(Hex(0x8b7bff), 0.30f + 0.08f * k));
-            DrawRectangleRoundedLinesEx(pl, 0.5f, 6, 1.5f, Fade2(Hex(0xc9c4ff), 0.35f));
+            if (painted) {
+                DrawRectangleRounded(pl, 0.5f, 6, Fade2(Hex(0xf3f0ff), 0.42f + 0.08f * k));
+                DrawRectangleRoundedLinesEx(pl, 0.5f, 6, 1.5f, Fade2(Hex(0x9d93d8), 0.45f));
+            } else {
+                DrawRectangleRounded(pl, 0.5f, 6, Fade2(Hex(0x8b7bff), 0.30f + 0.08f * k));
+                DrawRectangleRoundedLinesEx(pl, 0.5f, 6, 1.5f, Fade2(Hex(0xc9c4ff), 0.35f));
+            }
         }
     }
-    // the ground: grass on top, rows of memory tiles below
-    DrawRectangle((int)L, (int)kGround, (int)scr.width + 1, (int)(H - kGround) + 1, Hex(0x1a1430));
-    DrawRectangle((int)L, (int)kGround, (int)scr.width + 1, 14, Hex(0x3fbf6a));
-    DrawRectangle((int)L, (int)kGround + 14, (int)scr.width + 1, 6, Hex(0x2a8a4c));
+    // the ground: grass on top, rows of memory tiles below (in the picture's soft greens by day)
+    const Color soil = painted ? Hex(0x3b5a55) : Hex(0x1a1430), grass = painted ? Hex(0x7cbf8c) : Hex(0x3fbf6a);
+    const Color grassD = painted ? Hex(0x5a9a70) : Hex(0x2a8a4c), tile0 = painted ? Hex(0x4a6c66) : Hex(0x2a2148);
+    const Color tile1 = painted ? Hex(0x42605b) : Hex(0x221b3d), tuft = painted ? Hex(0x95d3a2) : Hex(0x5ad87f);
+    DrawRectangle((int)L, (int)kGround, (int)scr.width + 1, (int)(H - kGround) + 1, soil);
+    DrawRectangle((int)L, (int)kGround, (int)scr.width + 1, 14, grass);
+    DrawRectangle((int)L, (int)kGround + 14, (int)scr.width + 1, 6, grassD);
     for (float x = L - std::fmod(cam, 64.0f) - 64; x < R; x += 64) {
         for (int row = 0; row < 3; row++) {
             float y = kGround + 32 + row * 40, xo = (row % 2) * 32;
-            DrawRectangleRounded({x + xo + 4, y, 56, 30}, 0.2f, 4, Hex(row == 0 ? 0x2a2148 : 0x221b3d));
+            DrawRectangleRounded({x + xo + 4, y, 56, 30}, 0.2f, 4, row == 0 ? tile0 : tile1);
         }
-        // tufts of grass
-        Tri({x + 10, kGround + 2}, {x + 16, kGround - 10}, {x + 22, kGround + 2}, Hex(0x5ad87f));
-        Tri({x + 40, kGround + 2}, {x + 44, kGround - 7}, {x + 50, kGround + 2}, Hex(0x5ad87f));
+        Tri({x + 10, kGround + 2}, {x + 16, kGround - 10}, {x + 22, kGround + 2}, tuft);
+        Tri({x + 40, kGround + 2}, {x + 44, kGround - 7}, {x + 50, kGround + 2}, tuft);
     }
 }
 
