@@ -43,9 +43,10 @@ long TodayNumber() {
     return streak::DayNumber(tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday);
 }
 
-enum AppKind { APP_SEGFAULT, APP_EDITOR, APP_FOCUS, APP_COUNT };
-const char* kAppName[APP_COUNT] = {"SegFault", "SegFault Editor", "Focus"};
-const char* kAppLine[APP_COUNT] = {"Learn C & C++ by writing it", "Your own C and C++ files", "A Pomodoro timer for studying"};
+enum AppKind { APP_SEGFAULT, APP_EDITOR, APP_FOCUS, APP_AI, APP_COUNT };
+const char* kAppName[APP_COUNT] = {"SegFault", "SegFault Editor", "Focus", "SegFault AI"};
+const char* kAppLine[APP_COUNT] = {"Learn C & C++ by writing it", "Your own C and C++ files", "A Pomodoro timer for studying",
+                                   "A tutor for the exam"};
 
 // The editor's icon: a page of code with a folded corner.
 void DrawEditorIcon(Rectangle r, float hot) {
@@ -85,7 +86,8 @@ void DrawFocusIcon(Rectangle r, float time, float hot) {
 void DrawAppIcon(int kind, Rectangle r, float time, float hot) {
     if (kind == APP_SEGFAULT) DrawLogo(r, time, hot);
     else if (kind == APP_EDITOR) DrawEditorIcon(r, hot);
-    else DrawFocusIcon(r, time, hot);
+    else if (kind == APP_FOCUS) DrawFocusIcon(r, time, hot);
+    else DrawAiLogo(r, time, hot);
 }
 
 class DesktopScene : public Scene {
@@ -104,7 +106,7 @@ public:
     void Frame(float dt) override {
         t += dt;
         const Rectangle bar = {0, H - 54, W, 54};
-        const Rectangle startBtn = {W / 2 - 100, H - 49, 44, 44};
+        const Rectangle startBtn = {W / 2 - 126, H - 49, 44, 44};
         const bool busy = opening >= 0 || shutting >= 0;
         const bool input = InputEnabled() && !busy;
 
@@ -194,7 +196,7 @@ public:
             }
             if (t - opening > 0.5f) {
                 if (openApp == APP_SEGFAULT) app.Go(next == "home" ? SceneId::Home : SceneId::Login);
-                else app.Open(openApp == APP_EDITOR ? SceneId::Editor : SceneId::Focus, "", next);   // Back comes here
+                else app.Open(openApp == APP_EDITOR ? SceneId::Editor : openApp == APP_FOCUS ? SceneId::Focus : SceneId::Ai, "", next);   // Back comes here
             }
         }
         // ---- shutting down
@@ -337,7 +339,7 @@ private:
     }
 
     void StartMenu(Rectangle start, bool input) {
-        const float h = 392;
+        const float h = 454;
         Rectangle m = {W / 2 - 180, H - 54 - 12 - h, 360, h};
         Shadow(m, 14, 2);
         RoundRect(m, 14, Mix(col::panel, col::bg2, 0.3f));
@@ -356,7 +358,7 @@ private:
         }
 
         // open straight away next time
-        Rectangle opt = {m.x + 12, m.y + 236, m.width - 24, 50};
+        Rectangle opt = {m.x + 12, m.y + 298, m.width - 24, 50};
         bool oh = input && MouseIn(opt);
         if (oh) { RoundRect(opt, 10, Alpha(col::heading, 0.06f)); WantHand(); }
         Rectangle box = {opt.x + 12, opt.y + 15, 20, 20};
@@ -377,7 +379,7 @@ private:
         bool fh = input && MouseIn(off);
         if (fh) { RoundRect(off, 9, Alpha(col::danger, 0.15f)); WantHand(); }
         Vector2 c = {off.x + 20, off.y + 19};
-        DrawRing(c, 6.5f, 8.5f, 40, 320, 24, fh ? col::danger : col::text);   // power symbol
+        DrawRing(c, 6.5f, 8.5f, -50, 230, 24, fh ? col::danger : col::text);   // power symbol: the gap at the top (0 degrees is to the right)
         DrawLineEx({c.x, c.y - 10}, {c.x, c.y - 2}, 2, fh ? col::danger : col::text);
         Text("Shut down", off.x + 36, off.y + 11, 14, fh ? col::danger : col::text, F_BOLD);
         if (fh && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) { shutting = t; menu = false; }
