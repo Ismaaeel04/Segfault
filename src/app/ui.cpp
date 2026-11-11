@@ -71,14 +71,42 @@ bool InitFonts(const std::string& dir) {
     return ok;
 }
 
+static int gWarmNext = 0;
+
 void ClearFontCache() {
     for (auto& kv : gFontCache) UnloadFont(kv.second);
     gFontCache.clear();
+    gWarmNext = 0;   // the new scale needs them again
+}
+
+bool WarmFonts() {
+    // every kind at the sizes the screens use (11 to 26 canvas units), one per call
+    const int lo = 11, hi = 26, perKind = hi - lo + 1, total = F_COUNT * perKind;
+    if (gWarmNext >= total) return false;
+    int kind = gWarmNext / perKind, size = lo + gWarmNext % perKind;
+    gWarmNext++;
+    GetFont((FontKind)kind, (float)size);
+    return true;
 }
 
 void UnloadFonts() {
     ClearFontCache();
     for (int i = 0; i < F_COUNT; i++) if (gFontData[i]) { UnloadFileData(gFontData[i]); gFontData[i] = nullptr; }
+}
+
+// The characters every font is made with: ASCII, the Latin-1 letters
+// (á é í ó ú ñ ü ¿ ¡ ...) and a few symbols answers and lessons use.
+static const std::vector<int>& FontCodepoints() {
+    static std::vector<int> cps;
+    if (cps.empty()) {
+        for (int c = 32; c <= 126; c++) cps.push_back(c);
+        for (int c = 160; c <= 255; c++) cps.push_back(c);
+        const int extra[] = {0x2013, 0x2014, 0x2018, 0x2019, 0x201C, 0x201D, 0x2022, 0x2026, 0x2190, 0x2192,
+                             0x2191, 0x2193, 0x2194, 0x2260, 0x2264, 0x2265, 0x2248, 0x221A, 0x221E, 0x2211,
+                             0x00D7, 0x2713, 0x2717, 0x20AC, 0x0152, 0x0153};
+        for (int c : extra) if (std::find(cps.begin(), cps.end(), c) == cps.end()) cps.push_back(c);
+    }
+    return cps;
 }
 
 Font GetFont(FontKind kind, float size) {
@@ -89,7 +117,8 @@ Font GetFont(FontKind kind, float size) {
     if (it != gFontCache.end()) return it->second;
     Font f;
     if (gFontData[kind]) {
-        f = LoadFontFromMemory(".ttf", gFontData[kind], gFontSize[kind], px, nullptr, 0);
+        const std::vector<int>& cps = FontCodepoints();
+        f = LoadFontFromMemory(".ttf", gFontData[kind], gFontSize[kind], px, const_cast<int*>(cps.data()), (int)cps.size());
         SetTextureFilter(f.texture, TEXTURE_FILTER_POINT);
         // small sizes round the space advance down to almost nothing: enforce a minimum
         for (int g = 0; g < f.glyphCount; g++)
@@ -329,6 +358,66 @@ void DrawLogo(Rectangle r, float time, float hot) {
     DrawCircleV(sc, th * 0.6f, star);
 }
 
+void Sparkle(Vector2 c, float radius, Color col) {
+    // |x|^p + |y|^p = r^p with p < 1: four points joined by curves bending inwards
+    const int n = 64;
+    const float p = 0.55f;
+    Vector2 pts[n];
+    for (int i = 0; i < n; i++) {
+        float a = i * 2 * PI / n;
+        float ca = std::cos(a), sa = std::sin(a);
+        float rr = radius / std::pow(std::pow(std::fabs(ca), p) + std::pow(std::fabs(sa), p), 1.0f / p);
+        pts[i] = {c.x + ca * rr, c.y + sa * rr};
+    }
+    for (int i = 0; i < n; i++) {   // both windings: one of them faces the camera
+        DrawTriangle(c, pts[i], pts[(i + 1) % n], col);
+        DrawTriangle(c, pts[(i + 1) % n], pts[i], col);
+    }
+}
+
+// A curly brace centred on c: h tall, d wide, line th thick. closing: "}" instead of "{".
+static void DrawBrace(Vector2 c, float h, float d, float th, bool closing, Color col) {
+    const float k = closing ? -1.0f : 1.0f;              // mirror for "}"
+    const float top = c.y - h / 2, bot = c.y + h / 2, x = c.x, r = d * 0.5f;
+    auto P = [&](float dx, float y) { return Vector2{x + k * dx, y}; };
+    // top hook, stem, the point in the middle - and the same, mirrored, below
+    DrawSplineSegmentBezierCubic(P(r, top), P(r * 0.15f, top), P(0, top + r * 0.3f), P(0, top + r), th, col);
+    DrawLineEx(P(0, top + r), P(0, c.y - r), th, col);
+    DrawSplineSegmentBezierCubic(P(0, c.y - r), P(0, c.y - r * 0.3f), P(-r * 0.2f, c.y), P(-r, c.y), th, col);
+    DrawSplineSegmentBezierCubic(P(-r, c.y), P(-r * 0.2f, c.y), P(0, c.y + r * 0.3f), P(0, c.y + r), th, col);
+    DrawLineEx(P(0, c.y + r), P(0, bot - r), th, col);
+    DrawSplineSegmentBezierCubic(P(0, bot - r), P(0, bot - r * 0.3f), P(r * 0.15f, bot), P(r, bot), th, col);
+    for (Vector2 j : {P(r, top), P(0, top + r), P(0, c.y - r), P(-r, c.y), P(0, c.y + r), P(0, bot - r), P(r, bot)})
+        DrawCircleV(j, th / 2, col);   // round ends and joints
+}
+
+void DrawAiLogo(Rectangle r, float time, float hot) {
+    const float s = r.width, rad = s * 0.28f;
+    const Vector2 c = {r.x + s / 2, r.y + s / 2};
+    if (hot > 0.01f) SoftGlow(c, s * 1.15f, col::accent2, 0.30f * hot);
+    Shadow(r, rad, 0.9f);
+    // a night tile, lit from the top by the theme's colours
+    const Color night = {16, 14, 30, 255};   // the same dark tile on light and dark themes
+    Color top = Mix(night, col::accent, 0.32f), bottom = Mix(night, col::accent2, 0.14f);
+    GradientRoundRectV(r, rad, top, bottom);
+    GradientRoundRectV({r.x, r.y, s, s * 0.5f}, rad, Alpha(WHITE, 0.14f), Alpha(WHITE, 0));   // sheen
+    RoundRectLines(r, rad, std::max(1.0f, s * 0.025f), Alpha(Mix(col::accent, col::accent2, 0.5f), 0.55f + 0.35f * hot));
+
+    // the braces of a C block, drawn as curves (not font glyphs) so they sit
+    // exactly symmetric around the centre, in the theme's two colours
+    const float bh = s * 0.52f, bd = s * 0.15f, th = std::max(1.6f, s * 0.07f);
+    DrawBrace({r.x + s * 0.25f, c.y}, bh, bd, th, false, Mix(col::accent, WHITE, 0.15f));
+    DrawBrace({r.x + s * 0.75f, c.y}, bh, bd, th, true, Mix(col::accent2, WHITE, 0.15f));
+
+    // the sparkle where SegFault has its pointer star; it breathes
+    const float breathe = 1 + (0.05f + 0.05f * hot) * std::sin(time * (2.2f + 2.0f * hot));
+    SoftGlow(c, s * 0.28f, Mix(col::accent, col::accent2, 0.5f), 0.45f + 0.25f * hot);
+    Sparkle(c, s * 0.19f * breathe, WHITE);
+    // and a small one beside it, twinkling out of step
+    float tw = 0.7f + 0.3f * std::sin(time * 3.1f + 1.7f);
+    Sparkle({c.x + s * 0.13f, c.y - s * 0.14f}, s * 0.05f * tw, Mix(col::accent2, WHITE, 0.4f));
+}
+
 void SoftGlow(Vector2 center, float radius, Color c, float strength) {
     // Stacked faint circles fade smoothly; a single low-alpha gradient shows facets.
     const int layers = 24;
@@ -486,12 +575,18 @@ bool TextBox(Rectangle r, std::string& text, int id, int maxLen, bool numericOnl
         gActiveBoxFrame++;
         int ch = GetCharPressed();
         while (ch > 0) {
-            bool ok = ch >= 32 && ch < 127;
+            bool ok = (ch >= 32 && ch < 127) || ch >= 160;   // ASCII and accented letters (ñ, á, ¿ ...)
             if (numericOnly) ok = (ch >= '0' && ch <= '9') || ch == '-' || ch == ' ' || ch == ',';
-            if (ok && (int)text.size() < maxLen) text += (char)ch;
+            if (ok && (int)text.size() < maxLen) {
+                if (ch < 128) text += (char)ch;
+                else { int n = 0; const char* u = CodepointToUTF8(ch, &n); text.append(u, n); }
+            }
             ch = GetCharPressed();
         }
-        if ((IsKeyPressed(KEY_BACKSPACE) || IsKeyPressedRepeat(KEY_BACKSPACE)) && !text.empty()) text.pop_back();
+        if ((IsKeyPressed(KEY_BACKSPACE) || IsKeyPressedRepeat(KEY_BACKSPACE)) && !text.empty()) {
+            while (text.size() > 1 && ((unsigned char)text.back() & 0xC0) == 0x80) text.pop_back();   // a whole UTF-8 letter
+            text.pop_back();
+        }
         if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_KP_ENTER)) submitted = true;
 
         // Clipboard. A hidden password can be pasted (from a password manager)

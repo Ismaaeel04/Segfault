@@ -46,6 +46,9 @@ bool IsFocused(int id);
 enum FontKind { F_UI, F_MEDIUM, F_BOLD, F_HEAVY, F_DISPLAY, F_MONO, F_MONOBOLD, F_COUNT };
 bool InitFonts(const std::string& resourceDir);
 void ClearFontCache();           // after a scale change
+// Makes one of the usual font sizes ahead of time; main calls it every frame,
+// so screens don't stall the first time they use a size. False when all are made.
+bool WarmFonts();
 void UnloadFonts();
 Font GetFont(FontKind kind, float size);
 
@@ -76,6 +79,11 @@ void SoftGlow(Vector2 center, float radius, Color c, float strength);
 // The Segfault logo: {*}, a block of C code with a pointer star inside. The
 // star turns slowly; hot (0-1) makes it glow and spin faster.
 void DrawLogo(Rectangle r, float time, float hot = 0);
+// SegFault AI's logo, a sibling of the one above: { } around an AI sparkle,
+// on a dark tile. The sparkle breathes; hot (0-1) makes it glow.
+void DrawAiLogo(Rectangle r, float time, float hot = 0);
+// The sparkle alone: a four-point star with curved sides.
+void Sparkle(Vector2 c, float radius, Color col);
 void Backdrop(float time);       // the soft background behind every screen
 void Arrow(Vector2 from, Vector2 to, Color c, float thick = 2.0f, float head = 10.0f);
 void CurvedArrow(Vector2 from, Vector2 ctrl, Vector2 to, Color c, float thick = 2.0f, float head = 10.0f);
