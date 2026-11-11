@@ -90,7 +90,7 @@ void ClearFontCache() {
     gOldFontsFrames = 0;
 }
 
-static bool WarmPending() { return gWarmNext < 9 + F_COUNT * 16; }
+static bool WarmPending() { return gWarmNext < 8 + F_COUNT * 16; }
 
 static void FontsNewFrame() {
     gLoadsThisFrame = 0;
@@ -105,7 +105,7 @@ bool WarmFonts() {
     // first the big sizes a few screens use (desktop, Focus, titles), then every
     // kind at the usual sizes (11 to 26 canvas units); one per call
     static const struct { FontKind k; float size; } big[] = {
-        {F_MONOBOLD, 240}, {F_HEAVY, 58}, {F_MONOBOLD, 78}, {F_DISPLAY, 22}, {F_DISPLAY, 30},
+        {F_HEAVY, 58}, {F_MONOBOLD, 78}, {F_DISPLAY, 22}, {F_DISPLAY, 30},
         {F_DISPLAY, 38}, {F_DISPLAY, 42}, {F_DISPLAY, 44}, {F_HEAVY, 40},
     };
     const int nBig = (int)(sizeof(big) / sizeof(big[0]));
@@ -161,11 +161,11 @@ Font GetFont(FontKind kind, float size) {
     gLoadsThisFrame++;
     Font f;
     if (gFontData[kind]) {
-        // big sizes are numbers, symbols and English titles: fewer characters make
-        // them much faster to build (the huge one is only the desktop's {*})
-        static std::vector<int> ascii, mark = {' ', '*', '{', '}'};
+        // big sizes are numbers, symbols and English titles (clocks, scores):
+        // plain ASCII makes them much faster to build
+        static std::vector<int> ascii;
         if (ascii.empty()) for (int c = 32; c <= 126; c++) ascii.push_back(c);
-        const std::vector<int>& cps = px >= 120 ? mark : px >= 48 ? ascii : FontCodepoints();
+        const std::vector<int>& cps = px >= 48 ? ascii : FontCodepoints();
         f = LoadFontFromMemory(".ttf", gFontData[kind], gFontSize[kind], px, const_cast<int*>(cps.data()), (int)cps.size());
         SetTextureFilter(f.texture, TEXTURE_FILTER_POINT);
         // small sizes round the space advance down to almost nothing: enforce a minimum
@@ -439,6 +439,29 @@ static void DrawBrace(Vector2 c, float h, float d, float th, bool closing, Color
     DrawSplineSegmentBezierCubic(P(0, bot - r), P(0, bot - r * 0.3f), P(r * 0.15f, bot), P(r, bot), th, col);
     for (Vector2 j : {P(r, top), P(0, top + r), P(0, c.y - r), P(-r, c.y), P(0, c.y + r), P(0, bot - r), P(r, bot)})
         DrawCircleV(j, th / 2, col);   // round ends and joints
+}
+
+void DrawWallpaperMark(Vector2 c, float h, float alpha) {
+    // One solid colour: the backdrop's own colour at that height (Backdrop's
+    // gradient) with a touch of the heading colour. Solid, so where strokes
+    // overlap it doesn't show darker; draw it before any glow, which then tints
+    // it just like the background around it.
+    const Color base = Mix(col::bg, Mix(col::bg, col::bg2, 0.8f), c.y / H);
+    const Color col = Mix(base, col::heading, alpha);
+    const float th = h * 0.085f, gap = h * 0.62f;
+    DrawBrace({c.x - gap, c.y}, h, h * 0.30f, th, false, col);
+    DrawBrace({c.x + gap, c.y}, h, h * 0.30f, th, true, col);
+    // the asterisk: three strokes through the middle, like the logo's pointer star
+    const float arm = h * 0.25f;
+    const Vector2 sc = {c.x, c.y - h * 0.07f};
+    for (int k = 0; k < 3; k++) {
+        float a = PI / 2 + k * PI / 3;
+        Vector2 d = {std::cos(a) * arm, std::sin(a) * arm};
+        DrawLineEx({sc.x - d.x, sc.y - d.y}, {sc.x + d.x, sc.y + d.y}, th * 1.05f, col);
+        DrawCircleV({sc.x - d.x, sc.y - d.y}, th * 0.52f, col);
+        DrawCircleV({sc.x + d.x, sc.y + d.y}, th * 0.52f, col);
+    }
+    DrawCircleV(sc, th * 0.6f, col);
 }
 
 void DrawAiLogo(Rectangle r, float time, float hot) {

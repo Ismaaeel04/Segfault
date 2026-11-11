@@ -88,6 +88,9 @@ void DrawLogo(Rectangle r, float time, float hot = 0);
 // SegFault AI's logo, a sibling of the one above: { } around an AI sparkle,
 // on a dark tile. The sparkle breathes; hot (0-1) makes it glow.
 void DrawAiLogo(Rectangle r, float time, float hot = 0);
+// The big {*} on the wallpapers, drawn with shapes (a font that size can drop
+// glyphs). height: of the braces. alpha: how much it shows over the background.
+void DrawWallpaperMark(Vector2 center, float height, float alpha);
 // The sparkle alone: a four-point star with curved sides.
 void Sparkle(Vector2 c, float radius, Color col);
 void Backdrop(float time);       // the soft background behind every screen
