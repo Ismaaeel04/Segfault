@@ -292,11 +292,20 @@ std::vector<Seg> FxDef(Fx f) {
                                  {P, 784, 784, 0.24f, 0.12f, 0.6f, 0.5f, 0}, {P, 1046, 1046, 0.36f, 0.12f, 0.6f, 0.5f, 0},
                                  {P, 1318, 1318, 0.48f, 0.12f, 0.6f, 0.5f, 0}, {P, 1568, 1568, 0.60f, 0.70f, 0.6f, 0.5f, 6},
                                  {T, 131, 131, 0, 0.36f, 0.8f, 0, 0}, {T, 196, 196, 0.36f, 0.36f, 0.8f, 0, 0}, {T, 262, 262, 0.72f, 0.6f, 0.8f, 0, 0}};
+        // a springy little boing
+        case FX_HOP: return {{P, 360, 900, 0, 0.09f, 0.5f, 0.25f, 0}, {P, 900, 700, 0.09f, 0.05f, 0.3f, 0.25f, 0}};
+        // stone grinding awake: low rumble, a slow noise sweep, and a deep tone rising
+        case FX_GOLEM_WAKE: return {{N, 900, 2400, 0, 1.1f, 0.7f, 0, 0}, {T, 45, 70, 0, 1.2f, 0.9f, 0, 3}, {P, 82, 110, 0.2f, 0.9f, 0.4f, 0.125f, 5}};
+        // a heavy stomp on the ground
+        case FX_SLAM: return {{T, 120, 32, 0, 0.45f, 1.0f, 0, 0}, {N, 2500, 300, 0, 0.40f, 0.7f, 0, 0}};
+        // a block whistling down, then the crash where it lands
+        case FX_ROCK_FALL: return {{P, 1500, 380, 0, 0.55f, 0.25f, 0.5f, 0}, {N, 6000, 600, 0.55f, 0.30f, 0.8f, 0, 0}, {T, 140, 50, 0.55f, 0.25f, 0.9f, 0, 0}};
         default: return {};
     }
 }
 
-const float kFxLevel[FX_COUNT] = {0.35f, 0.55f, 0.60f, 0.60f, 0.60f, 0.32f, 0.50f, 0.50f, 0.50f, 0.70f, 0.35f, 0.70f, 0.75f, 0.35f, 0.50f, 0.22f, 0.35f, 0.60f};
+const float kFxLevel[FX_COUNT] = {0.35f, 0.55f, 0.60f, 0.60f, 0.60f, 0.32f, 0.50f, 0.50f, 0.50f, 0.70f, 0.35f, 0.70f, 0.75f, 0.35f, 0.50f, 0.22f, 0.35f, 0.60f,
+                                  0.30f, 0.70f, 0.65f, 0.50f};
 
 // ------------------------------------------------------- system sounds ---
 // A Rhodes-like electric piano for SegFault OS's own sounds.
@@ -387,6 +396,8 @@ const SongDef kSongs[] = {
     {"story", "rpgchip02_bittersweet_story.mid", true},
     {"plains", "rpgchip03_town.mid", true},
     {"boss", "rpgchip13_battle_1.mid", true},
+    {"canyon", "rpgchip07_the_shrine_of_mysteries.mid", true},
+    {"golem", "rpgchip14_battle_2.mid", true},
     {"gameover", "rpgchip15_game_over.mid", false},
 };
 const int kSongCount = (int)(sizeof(kSongs) / sizeof(kSongs[0]));
@@ -566,7 +577,8 @@ bool RenderToFiles(const std::string& musicDir, const std::string& outDir) {
         } else ok &= save(one, std::string("music_") + kSongs[i].id);
     }
     const char* fxNames[FX_COUNT] = {"swing", "hit", "crit", "kill", "hurt", "jump", "quiz", "right", "wrong", "roar",
-                                     "spit", "boss_hit", "boss_down", "terminal", "compile_error", "menu_move", "menu_select", "victory"};
+                                     "spit", "boss_hit", "boss_down", "terminal", "compile_error", "menu_move", "menu_select", "victory",
+                                     "hop", "golem_wake", "slam", "rock_fall"};
     for (int f = 0; f < FX_COUNT; f++) ok &= save(RenderFx(FxDef((Fx)f), kFxLevel[f]), std::string("fx_") + fxNames[f]);
     const char* uiNames[UI_COUNT] = {"click", "open", "close", "startup", "logon", "logoff", "shutdown", "error"};
     for (int u = 0; u < UI_COUNT; u++) ok &= save(RenderUi((Ui)u), std::string("system_") + uiNames[u]);

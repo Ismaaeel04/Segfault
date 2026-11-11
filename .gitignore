@@ -14,4 +14,4 @@ segfault_gemini_key.txt
 segfault_ai_provider.txt
 .DS_Store
 # the original MIDI downloads (the songs the game uses are in resources/music)
-music/
+/music/
