@@ -1,7 +1,8 @@
 // ============================================================================
 // intro.cpp  -  "SegFault OS" booting: a console that lists what the app is
 // really loading (lessons, problems, the compiler it finds in the background),
-// then the desktop (desktop.cpp). Any key or click skips it.
+// then the logo with a spinner, then the sign-in screen (login.cpp), or the
+// desktop if the last session is still open. Any key or click skips ahead.
 // ============================================================================
 #include "app/app.h"
 #include "app/runner.h"
@@ -29,6 +30,7 @@ public:
         next = param;
         t = 0;
         leaving = -1;
+        splashAt = -1;
         compilerAt = -1;
         compilerDone = -1;
         lines = {
@@ -57,7 +59,10 @@ public:
             if (compilerDone >= 0) shown = std::min((int)lines.size(), compilerLine + 1 + (int)((t - compilerDone) / step));
         }
         bool finished = shown == (int)lines.size() && compilerDone >= 0 && t - compilerDone > step * 2 + 0.5f;
-        if (leaving < 0 && (finished || (t > 0.3f && (GetKeyPressed() != 0 || IsMouseButtonPressed(MOUSE_BUTTON_LEFT))))) leaving = t;
+        bool key = t > 0.3f && (GetKeyPressed() != 0 || IsMouseButtonPressed(MOUSE_BUTTON_LEFT));
+        // the console, then the logo with a spinner for a moment, then sign in
+        if (splashAt < 0 && (finished || key)) splashAt = t;
+        else if (splashAt >= 0 && leaving < 0 && ((key && t - splashAt > 0.25f) || t - splashAt > 1.7f)) leaving = t;
         if (leaving >= 0 && t - leaving > 0.4f) { Leave(); return; }
 
         DrawRectangleRec(ScreenRect(), Mix(col::bg, BLACK, 0.55f));
@@ -110,13 +115,34 @@ public:
         if (p > 0) GradientRoundRect({bar.x, bar.y, std::max(4.0f, bar.width * p), bar.height}, 2, col::accent, col::accent2);
         Text("press any key to skip", x, H - 92, 12.5f, Alpha(col::faint, 0.8f), F_MEDIUM);
 
+        if (splashAt >= 0) Splash(Phase(t, splashAt, 0.35f));
         if (leaving >= 0) DrawRectangleRec(ScreenRect(), Alpha(BLACK, std::clamp((t - leaving) / 0.4f, 0.0f, 1.0f)));
     }
 
 private:
     std::string next;
     std::vector<BootLine> lines;
-    float t = 0, leaving = -1, compilerAt = -1, compilerDone = -1;
+    float t = 0, leaving = -1, splashAt = -1, compilerAt = -1, compilerDone = -1;
+
+    // The logo, and five dots chasing round under it (they speed up and slow
+    // down like the ones Windows shows while it starts).
+    void Splash(float k) {
+        Rectangle scr = ScreenRect();
+        DrawRectangleRec(scr, Alpha(Mix(col::bg, BLACK, 0.7f), k));
+        const float s = 112;
+        Vector2 c = {W / 2, H / 2 - 60};
+        SoftGlow(c, 220, col::accent, 0.16f * k);
+        if (k > 0.05f) DrawLogo({c.x - s / 2, c.y - s / 2, s, s}, t * 1.5f, 0.5f);
+        if (k < 1) DrawRectangleRec(scr, Alpha(Mix(col::bg, BLACK, 0.7f), 1 - k));   // fades the logo in
+        Vector2 sc = {W / 2, H / 2 + 92};
+        for (int i = 0; i < 5; i++) {
+            float u = std::fmod(t * 0.62f - i * 0.075f + 10, 1.0f);
+            float e = u * u * (3 - 2 * u);   // ease in and out
+            float a = -PI / 2 + e * 2 * PI;
+            DrawCircleV({sc.x + std::cos(a) * 20, sc.y + std::sin(a) * 20}, 3.2f, Alpha(WHITE, 0.9f * k));
+        }
+        TextCenter("SegFault OS", {0, H / 2 + 140, W, 24}, 17, Alpha(col::dim, k), F_BOLD);
+    }
 
     static float Phase(float t, float s, float len) { return std::clamp((t - s) / len, 0.0f, 1.0f); }
     std::string Spinner() const {
@@ -126,8 +152,10 @@ private:
     static std::string appStart() { return "Starting desktop..."; }
 
     void Leave() {
-        if (app.bootToApp) app.Go(next == "home" ? SceneId::Home : SceneId::Login);
-        else app.Go(SceneId::Desktop, next);
+        // nobody signed in: the sign-in screen; the last session still open: straight in
+        if (next != "home" || app.user.empty()) app.Go(SceneId::Login);
+        else if (app.bootToApp) app.Go(SceneId::Home);
+        else app.Go(SceneId::Desktop, "home");
     }
 };
 

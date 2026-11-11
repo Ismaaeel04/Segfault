@@ -49,6 +49,7 @@ static void CreateScenes() {
     gScenes[(int)SceneId::Editor].reset(CreateEditorScene());
     gScenes[(int)SceneId::Focus].reset(CreateFocusScene());
     gScenes[(int)SceneId::Ai].reset(CreateAiScene());
+    gScenes[(int)SceneId::Game].reset(CreateGameScene());
     gScenes[(int)SceneId::Leaderboard].reset(CreateLeaderboardScene());
     gScenes[(int)SceneId::Profile].reset(CreateProfileScene());
 }
@@ -540,14 +541,16 @@ int main(int argc, char** argv) {
         }
         SetInputEnabled(!pickerWasOpen);
         // the boot screen and the desktop are full screen: no top bar
-        bool back = app.current == SceneId::Intro || app.current == SceneId::Desktop ? false : TopBar(scene);
-        if (app.current != SceneId::Intro && app.current != SceneId::Desktop && app.current != SceneId::Ai) AiPanel(scene, dt);
+        bool back = app.current == SceneId::Intro || app.current == SceneId::Desktop || app.current == SceneId::Game ||
+                    app.current == SceneId::Login ? false : TopBar(scene);
+        if (app.current != SceneId::Intro && app.current != SceneId::Desktop && app.current != SceneId::Ai && app.current != SceneId::Game &&
+            app.current != SceneId::Login) AiPanel(scene, dt);
         const bool escClosesAi = aiShown && IsKeyPressed(KEY_ESCAPE) && !AnyTextFocused() && !pickerWasOpen;
         if (escClosesAi) app.aiOpen = false;
         if (app.themePickerOpen && !alertWasOpen) ThemePicker();
         if (alertWasOpen) { SetInputEnabled(true); focus::DrawAlert(); }
         if ((back || (IsKeyPressed(KEY_ESCAPE) && !escClosesAi && !AnyTextFocused() && !pickerWasOpen)) && app.current != SceneId::Home && app.current != SceneId::Login &&
-            app.current != SceneId::Intro && app.current != SceneId::Desktop) {
+            app.current != SceneId::Intro && app.current != SceneId::Desktop && app.current != SceneId::Game) {
             if (app.hasReturn) {
                 SceneId to = app.returnScene;
                 std::string param = app.returnParam;

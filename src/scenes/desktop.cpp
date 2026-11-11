@@ -6,10 +6,12 @@
 // "Shut down" closes the program.
 // ============================================================================
 #include "app/app.h"
+#include "app/avatar.h"
 #include "app/focus.h"
 #include "app/streak.h"
 #include "app/theme.h"
 #include "app/ui.h"
+#include "scenes/game_art.h"
 #include <algorithm>
 #include <cmath>
 #include <ctime>
@@ -43,10 +45,10 @@ long TodayNumber() {
     return streak::DayNumber(tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday);
 }
 
-enum AppKind { APP_SEGFAULT, APP_EDITOR, APP_FOCUS, APP_AI, APP_COUNT };
-const char* kAppName[APP_COUNT] = {"SegFault", "SegFault Editor", "Focus", "SegFault AI"};
+enum AppKind { APP_SEGFAULT, APP_EDITOR, APP_FOCUS, APP_AI, APP_GAME, APP_COUNT };
+const char* kAppName[APP_COUNT] = {"SegFault", "SegFault Editor", "Focus", "SegFault AI", "The Forgotten Pointer"};
 const char* kAppLine[APP_COUNT] = {"Learn C & C++ by writing it", "Your own C and C++ files", "A Pomodoro timer for studying",
-                                   "A tutor for the exam"};
+                                   "A tutor for the exam", "An adventure: answer to fight, code to win"};
 
 // The editor's icon: a page of code with a folded corner.
 void DrawEditorIcon(Rectangle r, float hot) {
@@ -87,7 +89,8 @@ void DrawAppIcon(int kind, Rectangle r, float time, float hot) {
     if (kind == APP_SEGFAULT) DrawLogo(r, time, hot);
     else if (kind == APP_EDITOR) DrawEditorIcon(r, hot);
     else if (kind == APP_FOCUS) DrawFocusIcon(r, time, hot);
-    else DrawAiLogo(r, time, hot);
+    else if (kind == APP_AI) DrawAiLogo(r, time, hot);
+    else fp::DrawGameIcon(r, time, hot);
 }
 
 class DesktopScene : public Scene {
@@ -108,7 +111,7 @@ public:
         const Rectangle scr = ScreenRect();   // the whole screen, wider than 1280 on wide displays
         const float L = scr.x, R = scr.x + scr.width;
         const Rectangle bar = {L, H - 54, scr.width, 54};
-        const Rectangle startBtn = {W / 2 - 126, H - 49, 44, 44};
+        const Rectangle startBtn = {W / 2 - 152, H - 49, 44, 44};
         const bool busy = opening >= 0 || shutting >= 0;
         const bool input = InputEnabled() && !busy;
 
@@ -198,7 +201,11 @@ public:
             }
             if (t - opening > 0.5f) {
                 if (openApp == APP_SEGFAULT) app.Go(next == "home" ? SceneId::Home : SceneId::Login);
-                else app.Open(openApp == APP_EDITOR ? SceneId::Editor : openApp == APP_FOCUS ? SceneId::Focus : SceneId::Ai, "", next);   // Back comes here
+                else {
+                    SceneId to = openApp == APP_EDITOR ? SceneId::Editor : openApp == APP_FOCUS ? SceneId::Focus
+                               : openApp == APP_AI ? SceneId::Ai : SceneId::Game;
+                    app.Open(to, "", next);   // Back comes here
+                }
             }
         }
         // ---- shutting down
@@ -342,7 +349,7 @@ private:
     }
 
     void StartMenu(Rectangle start, bool input) {
-        const float h = 510;
+        const float h = 572;
         Rectangle m = {W / 2 - 180, H - 54 - 12 - h, 360, h};
         Shadow(m, 14, 2);
         RoundRect(m, 14, Mix(col::panel, col::bg2, 0.3f));
@@ -361,7 +368,7 @@ private:
         }
 
         // open straight away next time
-        Rectangle opt = {m.x + 12, m.y + 298, m.width - 24, 50};
+        Rectangle opt = {m.x + 12, m.y + 360, m.width - 24, 50};
         bool oh = input && MouseIn(opt);
         if (oh) { RoundRect(opt, 10, Alpha(col::heading, 0.06f)); WantHand(); }
         Rectangle box = {opt.x + 12, opt.y + 15, 20, 20};
@@ -377,7 +384,7 @@ private:
         if (oh && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) { app.bootToApp = !app.bootToApp; SaveAppSettings(); }
 
         // full screen, like a real operating system (F11 does the same)
-        Rectangle fs = {m.x + 12, m.y + 354, m.width - 24, 50};
+        Rectangle fs = {m.x + 12, m.y + 416, m.width - 24, 50};
         bool fsh = input && MouseIn(fs);
         if (fsh) { RoundRect(fs, 10, Alpha(col::heading, 0.06f)); WantHand(); }
         Rectangle fb = {fs.x + 12, fs.y + 15, 20, 20};
@@ -402,8 +409,16 @@ private:
         DrawLineEx({c.x, c.y - 10}, {c.x, c.y - 2}, 2, fh ? col::danger : col::text);
         Text("Shut down", off.x + 36, off.y + 11, 14, fh ? col::danger : col::text, F_BOLD);
         if (fh && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) { shutting = t; menu = false; }
-        std::string who = app.lastUser.empty() ? "SegFault OS" : app.lastUser;
-        Text(who, m.x + 20, m.y + m.height - 40, 14, col::dim, F_MEDIUM);
+        // who is signed in, and signing out (back to the sign-in screen)
+        if (!app.user.empty()) {
+            avatar::Draw({m.x + 18, m.y + m.height - 47, 26, 26}, app.user, app.progress.avatarColour);
+            Text(Ellipsize(app.user, 14, F_BOLD, 96), m.x + 52, m.y + m.height - 41, 14, col::text, F_BOLD);
+            Rectangle so = {off.x - 104, off.y, 96, 38};
+            bool sh = input && MouseIn(so);
+            if (sh) { RoundRect(so, 9, Alpha(col::heading, 0.10f)); WantHand(); }
+            TextCenter("Sign out", so, 14, sh ? col::heading : col::text, F_BOLD);
+            if (sh && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) { menu = false; app.signOutRequested = true; }
+        } else Text("SegFault OS", m.x + 20, m.y + m.height - 40, 14, col::dim, F_MEDIUM);
 
         // a click anywhere else closes it
         if (input && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && !MouseIn(m) && !MouseIn(start)) menu = false;

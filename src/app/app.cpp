@@ -151,7 +151,8 @@ void SignIn(const std::string& username) {
     else app.progress.theme = ui::Themes()[ui::CurrentTheme()].id;
     app.progress.Save();
     SaveAppSettings();
-    app.Go(SceneId::Home);
+    if (app.bootToApp) app.Go(SceneId::Home);
+    else app.Go(SceneId::Desktop, "home");
 }
 
 std::vector<LeaderRow> LoadLeaderboard() {
@@ -253,8 +254,7 @@ void SignOut() {
     app.progress.trail = keepTrail;
     app.progress.customCursor = keepCursor;
     SaveAppSettings();
-    if (app.bootToApp) app.Go(SceneId::Login);
-    else app.Go(SceneId::Desktop, "login");
+    app.Go(SceneId::Login);
 }
 
 // ========================================================= saved code ======

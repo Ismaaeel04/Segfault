@@ -24,10 +24,13 @@ The exams are about **writing code**, so the app is too. It has three main parts
 ## Student accounts
 
 The app starts like a small operating system, **SegFault OS**: a boot console lists what it
-loads (lessons, problems, the compiler it finds), then a desktop with three apps, a countdown
-to the exam, a taskbar and a clock. Double-click an icon to open it; logging out goes back to the
-desktop (so does **Desktop** on the home screen, without logging out), and *Shut down* in the start menu closes the program. *Open SegFault at start-up* in the
-start menu skips the desktop; any key skips the boot screen. The apps:
+loads (lessons, problems, the compiler it finds), the logo shows with a spinner, and then the
+**sign-in screen**: the time over the wallpaper, and after any key or click the student's
+picture and password (or *Create an account* / *Forgot password?*). Signing in opens the desktop:
+its apps, a countdown to the exam, a taskbar, a start menu (with *Sign out* and *Shut down*) and a
+clock. **Desktop** on the home screen goes back to it without signing out. *Open SegFault at
+start-up* in the start menu opens SegFault itself after signing in; F11 is full screen. Any key
+skips the boot screen. The apps:
 
 - **SegFault**: the lessons, problems, mock exams and quiz (login screen first).
 - **SegFault Editor**: your own `.c` and `.cpp` files, outside the problems. Make, open and
@@ -81,6 +84,19 @@ models) or a Claude key in `segfault_ai_key.txt`, or `GEMINI_API_KEY` / `ANTHROP
 environment. Both files are ignored by git. The question, the code and the last run are sent to that
 service to answer. It uses WinHTTP (part of Windows), so it is Windows-only for now; answers stream
 in as they are written. `Segfault --ai-test "question"` checks the connection from a terminal.
+
+## The Forgotten Pointer
+
+A side-scrolling adventure on the SegFault OS desktop. The SEGFAULT has taken Princess Ada into
+the depths of the Heap; you are the Debugger, crossing six lands (one per exam topic) to bring
+her back. Strike a bug and a question may appear: answer right for a critical hit, wrong and it
+strikes back (the last blow always asks one). Each land ends with a guardian you beat by writing
+code at a terminal: every test your code passes is a hit, and a compile error lets it strike you.
+
+Chapter 1 is playable: the Stack Plains (loops and numbers), its Off-by-One Goblins and the
+Infinite Loop Serpent. The menu has New Game, Continue, Restart and Settings (rebindable keys,
+difficulty, question timer, sound). Progress and settings are saved per student in
+`forgotten_pointer.txt`. Everything is drawn with raylib shapes; the sounds are made in code.
 
 ## Themes
 

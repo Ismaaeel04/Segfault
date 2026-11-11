@@ -1,10 +1,17 @@
 // ============================================================================
-// login.cpp  -  The first screen: log in, create a student account, or reset
-// a forgotten password with the recovery code given when the account was made.
+// login.cpp  -  SegFault OS's sign-in screen, the way a real system does it:
+// first the lock screen (the time over the wallpaper), then, after any key or
+// click, the student's picture and password. From here a student can also
+// create an account or reset a forgotten password with the recovery code
+// given when the account was made. Signing in opens the desktop.
 // ============================================================================
 #include "app/app.h"
 #include "app/auth.h"
+#include "app/avatar.h"
+#include "app/theme.h"
 #include "app/ui.h"
+#include <cmath>
+#include <ctime>
 #include <vector>
 
 using namespace ui;
@@ -16,124 +23,212 @@ enum class Mode { LogIn, Register, Forgot };
 
 class LoginScene : public Scene {
 public:
-    const char* Title() const override { return "Log in"; }
-    void Enter(const std::string&) override {
+    const char* Title() const override { return "Sign in"; }
+    bool AiAllowed() const override { return false; }
+    void Enter(const std::string& param) override {
         shownCode.clear();
         if (username.empty()) username = app.lastUser;
+        switching = username.empty();
         SetMode(Mode::LogIn);
+        locked = param != "signin" && param != "register";   // --shot hooks skip the lock screen
+        if (param == "register") { switching = true; username.clear(); SetMode(Mode::Register); }
+        unlockAt = locked ? -1 : -10;
+        t = 0;
+        ClearTextFocus();
     }
 
-    void Frame(float) override {
+    void Frame(float dt) override {
+        t += dt;
+        Wallpaper();
+        // ---- the lock screen: the time; any key or click slides it away
+        if (locked) {
+            if (t > 0.2f && (GetKeyPressed() != 0 || IsMouseButtonPressed(MOUSE_BUTTON_LEFT))) { locked = false; unlockAt = t; }
+            LockClock(0, 1);
+            return;
+        }
+        float lift = unlockAt < 0 ? 1 : std::min(1.0f, (t - unlockAt) / 0.35f);   // < 0: it opened unlocked
+        lift = 1 - (1 - lift) * (1 - lift);
+        if (lift < 1) LockClock(-lift * 260, 1 - lift);
+        const bool light = Themes()[CurrentTheme()].light;   // light themes: a softer veil, not grey
+        DrawRectangleRec(ScreenRect(), light ? Alpha(col::bg, 0.45f * lift) : Alpha(BLACK, 0.38f * lift));
+        if (lift < 0.6f) return;
+        if (pendingFocus == 0 && !AnyTextFocused() && shownCode.empty() && t - unlockAt < 0.6f)
+            pendingFocus = mode == Mode::LogIn && !switching ? BOX_PASSWORD : BOX_USER;
+
         const bool modal = !shownCode.empty();
         bool submit = !modal && (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_KP_ENTER));
         if (!modal && IsKeyPressed(KEY_TAB)) CycleFocus();
+        if (!modal && IsKeyPressed(KEY_ESCAPE) && !AnyTextFocused()) {   // back to the lock screen
+            if (mode != Mode::LogIn) SetMode(Mode::LogIn);
+            else { locked = true; unlockAt = -1; }
+            return;
+        }
         if (modal) SetInputEnabled(false);
 
-        Rectangle outer = {140, 92, 1000, 668};
-        Panel(outer, col::panel, 20);
-        Brand({outer.x, outer.y, 420, outer.height});
-
-        const bool reg = mode == Mode::Register, forgot = mode == Mode::Forgot;
-        float x = outer.x + 480, w = 460;
-        float y = outer.y + (outer.height - (mode == Mode::LogIn ? 436.0f : 556.0f)) / 2;
-        Text(reg ? "Create your account" : forgot ? "Reset your password" : "Welcome back", x, y, 30, col::heading, F_DISPLAY);
-        Text(reg ? "Your progress and code are saved to your account."
-                 : forgot ? "Use the recovery code you saved when you made your account."
-                          : "Log in to continue where you left off.",
-             x, y + 44, 15, col::dim, F_MEDIUM);
-        y += 84;
-
-        if (!forgot) {
-            if (Tab({x, y, w / 2 - 4, 42}, "Log in", !reg) && reg) SetMode(Mode::LogIn);
-            if (Tab({x + w / 2 + 4, y, w / 2 - 4, 42}, "Create account", reg) && !reg) SetMode(Mode::Register);
-            y += 62;
-        }
-
-        Field(x, y, w, "Username", username, BOX_USER, auth::kMaxUsername, false, reg ? "3-24 letters, digits, _ or -" : "");
-        y += reg ? 100 : 80;
-        if (forgot) {
-            Field(x, y, w, "Recovery code", code, BOX_CODE, 20, false, "The code you saved, like ABCD-EFGH-JKMN");
-            y += 100;
-        }
-        Field(x, y, w, forgot ? "New password" : "Password", password, BOX_PASSWORD, auth::kMaxPassword, true,
-              reg || forgot ? "At least 8 characters" : "");
-        if (mode == Mode::LogIn && Link(x + w, y - 1, "Forgot password?", true)) SetMode(Mode::Forgot);
-        y += reg || forgot ? 100 : 80;
-        if (reg || forgot) {
-            Field(x, y, w, forgot ? "Confirm new password" : "Confirm password", confirm, BOX_CONFIRM, auth::kMaxPassword, true, "");
-            y += 80;
-        }
-
-        if (!error.empty()) Text(Ellipsize(error, 14.5f, F_MEDIUM, w), x, y, 14.5f, col::danger, F_MEDIUM);
-        y += 28;
-        if (Button({x, y, w, 50}, reg ? "Create account" : forgot ? "Reset password" : "Log in", BTN_PRIMARY)) submit = true;
-        y += 64;
-        if (forgot) { if (Link(x, y, "<  Back to log in", false)) SetMode(Mode::LogIn); }
-        else Text("Accounts are stored on this computer.", x, y, 13.5f, col::faint, F_MEDIUM);
+        if (mode == Mode::LogIn) SignInPanel(submit);
+        else FormCard(submit);
+        BottomBar();
 
         if (modal) { SetInputEnabled(true); CodeWindow(); }
-        else if (submit) { if (reg) DoRegister(); else if (forgot) DoReset(); else DoLogin(); }
         // Applied after the fields: on the frame of a click, a text box drops
         // the focus if the click was outside it.
         if (pendingFocus) { FocusWidget(pendingFocus); pendingFocus = 0; }
     }
 
 private:
-    // The coloured panel on the left. Deep enough in every theme for white text.
-    void Brand(Rectangle r) {
-        const Color left = Mix(col::accent, BLACK, 0.5f);
-        const Color right = Mix(Mix(col::accent, col::accent2, 0.6f), BLACK, 0.62f);
-        GradientRoundRect(r, 20, left, right);
-        GradientRoundRectV(r, 20, Alpha(WHITE, 0.08f), Alpha(BLACK, 0.18f));   // light from above
-        BeginClip(r);
-        DotGrid({r.x + 250, r.y + 20, 150, 110}, 18, Alpha(WHITE, 0.22f));
-        EndClip();
-
-        float x = r.x + 40, y = r.y + 44;
-        DrawLogo({x, y, 56, 56}, (float)GetTime());
-        Text("SegFault", x, y + 78, 42, WHITE, F_DISPLAY);
-        Text("Learn C & C++ by writing it.", x, y + 132, 17, Alpha(WHITE, 0.85f), F_MEDIUM);
-
-        y += 190;
-        const char* points[3][2] = {{"Study", "Lessons with code you can step through"},
-                                    {"Practice", "50 problems, compiled and tested for real"},
-                                    {"Mock exams", "Timed papers marked by hidden tests"}};
-        for (const auto& p : points) {
-            DrawCircleV({x + 6, y + 10}, 5, WHITE);
-            Text(p[0], x + 24, y, 17, WHITE, F_BOLD);
-            Text(p[1], x + 24, y + 23, 13.5f, Alpha(WHITE, 0.82f), F_MEDIUM);
-            y += 58;
-        }
-
-        // a small code card, always in dark colours so it reads on any theme
-        Rectangle card = {x, r.y + r.height - 128, r.width - 80, 92};
-        RoundRect(card, 12, Alpha(BLACK, 0.42f));
-        RoundRectLines(card, 12, 1, Alpha(WHITE, 0.16f));
-        const float fs = 14.5f, cw = CodeCharWidth(fs);
-        struct Span { const char* s; Color c; };
-        const Color key = {196, 167, 255, 255}, num = {253, 186, 116, 255}, com = {170, 178, 200, 255}, txt = {232, 236, 246, 255};
-        const std::vector<std::vector<Span>> code = {
-            {{"int", key}, {" value = ", txt}, {"7", num}, {";", txt}},
-            {{"int", key}, {"* ptr = &value;", txt}},
-            {{"*ptr = ", txt}, {"42", num}, {";  ", txt}, {"// value is now 42", com}}};
-        float cy = card.y + 14;
-        for (const auto& line : code) {
-            float cx = card.x + 16;
-            for (const Span& sp : line) {
-                std::string part = sp.s;
-                Text(part, cx, cy, fs, sp.c, F_MONO);
-                cx += part.size() * cw;
-            }
-            cy += 22;
-        }
-    }
-
     Mode mode = Mode::LogIn;
     std::string username, password, confirm, code, error;
     int pendingFocus = 0;
+    bool locked = true, switching = false;
+    float t = 0, unlockAt = -1;
     // The recovery code on show, and who signs in once it has been saved.
     std::string shownCode, shownFor, shownIntro, shownToast;
 
+    // ------------------------------------------------------------ drawing --
+    // The desktop's wallpaper, so signing in feels like the same system.
+    void Wallpaper() {
+        Rectangle scr = ScreenRect();
+        SoftGlow({W / 2, H / 2 - 30}, 460, col::accent, 0.14f);
+        SoftGlow({W / 2 + 260, H / 2 + 140}, 320, col::accent2, 0.09f);
+        DotGrid(scr, 28, Alpha(col::border, 0.35f));
+        const float fs = 240;
+        TextCenter("{*}", {0, H / 2 - fs / 2 - 40, W, fs}, fs, Alpha(col::heading, 0.04f), F_MONOBOLD);
+    }
+
+    // The big clock and the date. dy moves it (it slides up when unlocking).
+    void LockClock(float dy, float alpha) {
+        std::time_t now = std::time(nullptr);
+        std::tm tm = *std::localtime(&now);
+        char hm[8];
+        std::snprintf(hm, sizeof(hm), "%02d:%02d", tm.tm_hour, tm.tm_min);
+        static const char* days[] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
+        static const char* months[] = {"January", "February", "March", "April", "May", "June", "July", "August", "September",
+                                       "October", "November", "December"};
+        std::string date = std::string(days[tm.tm_wday]) + ", " + std::to_string(tm.tm_mday) + " " + months[tm.tm_mon];
+        TextCenter(hm, {0, 196 + dy, W, 130}, 116, Alpha(col::heading, alpha), F_DISPLAY);
+        TextCenter(date, {0, 334 + dy, W, 34}, 26, Alpha(col::text, alpha), F_MEDIUM);
+        // a hint, gently bobbing
+        float bob = std::sin(t * 2.4f) * 4;
+        Vector2 c = {W / 2, H - 112 + bob + dy};
+        DrawLineEx({c.x - 10, c.y + 5}, {c.x, c.y - 5}, 2.4f, Alpha(col::dim, alpha));
+        DrawLineEx({c.x, c.y - 5}, {c.x + 10, c.y + 5}, 2.4f, Alpha(col::dim, alpha));
+        TextCenter("Press any key or click to sign in", {0, H - 96 + dy, W, 22}, 15, Alpha(col::dim, alpha), F_MEDIUM);
+        DrawLogo({W / 2 - 22, 120 + dy, 44, 44}, t, 0.2f);
+    }
+
+    // The picture, the name and the password, in the middle of the screen.
+    void SignInPanel(bool submit) {
+        const float cx = W / 2, w = 340;
+        float y = 150;
+        // the avatar: the student's picture if they have one, or a person
+        Rectangle av = {cx - 64, y, 128, 128};
+        SoftGlow({cx, y + 64}, 120, col::accent, 0.15f);
+        if (!switching && !username.empty()) avatar::Draw(av, username, 0);
+        else {
+            RoundRect(av, 64, Mix(col::panel, col::panelHi, 0.6f));
+            DrawCircleV({cx, y + 50}, 22, col::dim);
+            DrawCircleSector({cx, y + 116}, 40, 180, 360, 32, col::dim);
+        }
+        RoundRectLines(av, 64, 2, Alpha(col::heading, 0.25f));
+        y += 150;
+
+        if (!switching && !username.empty()) {
+            TextCenter(username, {0, y, W, 40}, 32, col::heading, F_DISPLAY);
+            y += 58;
+        } else {
+            TextCenter("Sign in", {0, y, W, 40}, 32, col::heading, F_DISPLAY);
+            y += 54;
+            Text("Username", cx - w / 2, y, 13.5f, col::dim, F_BOLD);
+            TextBox({cx - w / 2, y + 20, w, 44}, username, BOX_USER, auth::kMaxUsername, false, "your username");
+            y += 76;
+        }
+        // the password, with the arrow that signs in attached to it
+        Rectangle pw = {cx - w / 2, y, w - 50, 46};
+        TextBox(pw, password, BOX_PASSWORD, auth::kMaxPassword, false, "Password", true);
+        Rectangle go = {pw.x + pw.width + 6, y, 44, 46};
+        if (Button(go, "", BTN_PRIMARY, true, 14)) submit = true;
+        Vector2 a = {go.x + 22, go.y + 23};
+        Color on = OnColor(col::accent);
+        DrawLineEx({a.x - 8, a.y}, {a.x + 7, a.y}, 2.4f, on);
+        DrawLineEx({a.x + 1, a.y - 6}, {a.x + 7, a.y}, 2.4f, on);
+        DrawLineEx({a.x + 1, a.y + 6}, {a.x + 7, a.y}, 2.4f, on);
+        y += 58;
+        if (!error.empty()) {
+            for (const std::string& l : Wrap(error, 14, F_MEDIUM, w)) { TextCenter(l, {0, y, W, 20}, 14, col::danger, F_MEDIUM); y += 20; }
+            y += 6;
+        }
+        // the links
+        float lx = cx - w / 2;
+        if (Link(lx, y, "Forgot password?", false)) SetMode(Mode::Forgot);
+        if (!switching && !username.empty()) {
+            if (Link(cx + w / 2, y, "Not you? Switch user", true)) { switching = true; username.clear(); SetMode(Mode::LogIn); }
+        } else if (!app.lastUser.empty() && Link(cx + w / 2, y, "Back to " + app.lastUser, true)) {
+            switching = false; username = app.lastUser; SetMode(Mode::LogIn);
+        }
+        y += 44;
+        // a new student
+        Rectangle make = {cx - w / 2, y, w, 44};
+        if (Button(make, "Create an account", BTN_GHOST, true, 14.5f)) { switching = true; username.clear(); SetMode(Mode::Register); }
+
+        if (submit && shownCode.empty()) DoLogin();
+    }
+
+    // Create an account / reset the password: a glass card over the wallpaper.
+    void FormCard(bool submit) {
+        const bool reg = mode == Mode::Register;
+        const float w = 440;
+        float h = reg ? 516 : 610;
+        Rectangle card = {W / 2 - w / 2 - 36, H / 2 - h / 2 - 20, w + 72, h};
+        Shadow(card, 22, 2);
+        RoundRect(card, 22, Alpha(col::panel, 0.94f));
+        RoundRectLines(card, 22, 1, col::border);
+        float x = card.x + 36, y = card.y + 30;
+        Text(reg ? "Create your account" : "Reset your password", x, y, 28, col::heading, F_DISPLAY);
+        y += 40;
+        Text(reg ? "Your progress, files and code are saved to it." : "Use the recovery code you saved when you made your account.",
+             x, y, 14, col::dim, F_MEDIUM);
+        y += 40;
+        Field(x, y, w, "Username", username, BOX_USER, auth::kMaxUsername, false, reg ? "3-24 letters, digits, _ or -" : "");
+        y += reg ? 96 : 78;
+        if (!reg) {
+            Field(x, y, w, "Recovery code", code, BOX_CODE, 20, false, "The code you saved, like ABCD-EFGH-JKMN");
+            y += 96;
+        }
+        Field(x, y, w, reg ? "Password" : "New password", password, BOX_PASSWORD, auth::kMaxPassword, true, "At least 8 characters");
+        y += 96;
+        Field(x, y, w, reg ? "Confirm password" : "Confirm new password", confirm, BOX_CONFIRM, auth::kMaxPassword, true, "");
+        y += 78;
+        if (!error.empty()) Text(Ellipsize(error, 14, F_MEDIUM, w), x, y, 14, col::danger, F_MEDIUM);
+        y += 26;
+        if (Button({x, y, w, 46}, reg ? "Create account" : "Reset password", BTN_PRIMARY)) submit = true;
+        y += 58;
+        if (Link(x, y, "<  Back to sign in", false)) { switching = app.lastUser.empty(); username = app.lastUser; SetMode(Mode::LogIn); }
+        if (submit && shownCode.empty()) { if (reg) DoRegister(); else DoReset(); }
+    }
+
+    // SegFault OS on the left; theme and power on the right.
+    void BottomBar() {
+        Rectangle scr = ScreenRect();
+        float L = scr.x, R = scr.x + scr.width;
+        DrawLogo({L + 24, H - 58, 34, 34}, t, 0);
+        Text("SegFault OS", L + 68, H - 50, 15, col::dim, F_BOLD);
+        Rectangle power = {R - 58, H - 62, 40, 40}, theme = {R - 108, H - 62, 40, 40};
+        bool ph = MouseIn(power), th = MouseIn(theme);
+        if (ph || th) WantHand();
+        if (ph) RoundRect(power, 10, Alpha(col::danger, 0.18f));
+        if (th) RoundRect(theme, 10, Alpha(col::heading, 0.10f));
+        Vector2 c = {power.x + 20, power.y + 21};
+        DrawRing(c, 7, 9, -50, 230, 24, ph ? col::danger : col::text);   // power symbol, gap at the top
+        DrawLineEx({c.x, c.y - 11}, {c.x, c.y - 2}, 2.2f, ph ? col::danger : col::text);
+        const Color dots[3] = {col::accent, col::accent2, col::pointer};
+        for (int i = 0; i < 3; i++) DrawCircleV({theme.x + 13 + i * 7.0f, theme.y + 20}, 4, dots[i]);
+        if (ph && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) app.quitRequested = true;
+        if (th && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) app.themePickerOpen = true;
+        if (ph) TextRight("Shut down", power.x - 6, power.y + 12, 13, col::text, F_MEDIUM);
+        if (th) TextRight("Theme", theme.x - 6, theme.y + 12, 13, col::text, F_MEDIUM);
+    }
+
+    // ------------------------------------------------------------ helpers --
     void SetMode(Mode m) {
         mode = m;
         password.clear();
@@ -141,11 +236,13 @@ private:
         code.clear();
         error.clear();
         pendingFocus = username.empty() ? BOX_USER : m == Mode::Forgot ? BOX_CODE : BOX_PASSWORD;
+        if (m == Mode::LogIn && (switching || username.empty())) pendingFocus = BOX_USER;
     }
 
     std::vector<int> FocusOrder() const {
         if (mode == Mode::Register) return {BOX_USER, BOX_PASSWORD, BOX_CONFIRM};
         if (mode == Mode::Forgot) return {BOX_USER, BOX_CODE, BOX_PASSWORD, BOX_CONFIRM};
+        if (!switching && !username.empty()) return {BOX_PASSWORD};
         return {BOX_USER, BOX_PASSWORD};
     }
 
@@ -160,9 +257,9 @@ private:
     }
 
     void Field(float x, float y, float w, const char* label, std::string& value, int id, int maxLen, bool masked, const char* hint) {
-        Text(label, x, y, 14, col::text, F_BOLD);
-        TextBox({x, y + 22, w, 44}, value, id, maxLen, false, "", masked);
-        if (hint[0]) Text(hint, x, y + 72, 13, col::faint, F_MEDIUM);
+        Text(label, x, y, 13.5f, col::text, F_BOLD);
+        TextBox({x, y + 20, w, 44}, value, id, maxLen, false, "", masked);
+        if (hint[0]) Text(hint, x, y + 70, 12.5f, col::faint, F_MEDIUM);
     }
 
     // A text link. rightAlign: x is where the text ends.
@@ -182,7 +279,6 @@ private:
         shownFor = res.username;
         shownIntro = intro;
         shownToast = toast;
-        username.clear();
         password.clear();
         confirm.clear();
         code.clear();
@@ -214,13 +310,17 @@ private:
         if (Button({x + w - 240, by, 240, 46}, "I have saved it", BTN_PRIMARY)) {
             std::string who = shownFor, toast = shownToast;
             shownCode.clear();
+            username = who;
+            switching = false;
+            mode = Mode::LogIn;
             SignIn(who);
             Toast(toast, col::accent2);
         }
     }
 
+    // ---------------------------------------------------------- accounts --
     void DoLogin() {
-        if (username.empty() || password.empty()) { error = "Enter your username and password"; return; }
+        if (username.empty() || password.empty()) { error = username.empty() ? "Enter your username" : "Enter your password"; return; }
         auth::UserStore store = Store();
         auth::AuthResult res = store.Login(username, password);
         password.clear();
@@ -234,8 +334,9 @@ private:
                 return;
             }
         }
-        username.clear();
         error.clear();
+        username = res.username;
+        switching = false;
         SignIn(res.username);
         Toast("Welcome back, " + res.username, col::accent2);
     }
