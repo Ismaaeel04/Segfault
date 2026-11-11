@@ -87,8 +87,20 @@ ProcResult RunProcess(const std::vector<std::string>& args, const std::string& w
     si.hStdError = writePipe;
     si.hStdInput = nulIn;
     PROCESS_INFORMATION pi = {};
-    BOOL ok = CreateProcessA(nullptr, cmdBuf.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW,
-                             env ? envBlock.data() : nullptr, workDir.empty() ? nullptr : workDir.c_str(), &si, &pi);
+    // A crashing program must end at once: no "stopped working" window (the
+    // child inherits this error mode), or it would sit there until the time limit.
+    static const bool quietCrashes = (SetErrorMode(GetErrorMode() | SEM_NOGPFAULTERRORBOX | SEM_FAILCRITICALERRORS), true);
+    (void)quietCrashes;
+    BOOL ok = FALSE;
+    for (int attempt = 0; attempt < 6; attempt++) {
+        ok = CreateProcessA(nullptr, cmdBuf.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW,
+                            env ? envBlock.data() : nullptr, workDir.empty() ? nullptr : workDir.c_str(), &si, &pi);
+        if (ok) break;
+        // a program that was just linked can be locked for a moment (antivirus scan): try again
+        DWORD e = GetLastError();
+        if (e != ERROR_SHARING_VIOLATION && e != ERROR_ACCESS_DENIED && e != ERROR_LOCK_VIOLATION) break;
+        Sleep(150);
+    }
     CloseHandle(writePipe);
     if (nulIn != INVALID_HANDLE_VALUE) CloseHandle(nulIn);
     if (!ok) { CloseHandle(readPipe); return r; }
@@ -106,7 +118,22 @@ ProcResult RunProcess(const std::vector<std::string>& args, const std::string& w
         DWORD w = WaitForSingleObject(pi.hProcess, 5);
         double elapsed = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
         if (w == WAIT_OBJECT_0) break;
-        if (elapsed > timeoutMs || r.outputTruncated) {
+        // Over the limit means over it in CPU time, so a program held up before it
+        // even starts (an antivirus scan of a new .exe) isn't cut off for nothing.
+        // Something that waits without using the CPU still stops at 4x the limit.
+        bool over = false;
+        if (elapsed > timeoutMs) {
+            FILETIME c0, e0, k0, u0;
+            double cpuMs = 0;
+            if (GetProcessTimes(pi.hProcess, &c0, &e0, &k0, &u0)) {
+                ULARGE_INTEGER k, u;
+                k.LowPart = k0.dwLowDateTime; k.HighPart = k0.dwHighDateTime;
+                u.LowPart = u0.dwLowDateTime; u.HighPart = u0.dwHighDateTime;
+                cpuMs = (k.QuadPart + u.QuadPart) / 10000.0;
+            }
+            over = cpuMs > timeoutMs * 0.5 || elapsed > timeoutMs * 4.0;
+        }
+        if (over || r.outputTruncated) {
             TerminateProcess(pi.hProcess, 1);
             WaitForSingleObject(pi.hProcess, 2000);
             r.timedOut = !r.outputTruncated;
