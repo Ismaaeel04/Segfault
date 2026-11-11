@@ -231,7 +231,7 @@ private:
 
     void ResetModal() {
         SetInputEnabled(true);
-        DrawRectangleRec({0, 0, W, H}, Alpha(BLACK, 0.6f));
+        DrawRectangleRec(ScreenRect(), Alpha(BLACK, 0.6f));
         Rectangle r = {W / 2 - 230, H / 2 - 100, 460, 200};
         Panel(r, col::panel, 16);
         Text("Reset all progress?", r.x + 28, r.y + 26, 22, col::heading, F_HEAVY);

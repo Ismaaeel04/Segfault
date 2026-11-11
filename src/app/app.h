@@ -85,6 +85,7 @@ struct App {
     bool bootToApp = false;               // skip the SegFault OS desktop (start menu option)
     bool quitRequested = false;           // "Shut down" on the desktop
     bool aiOpen = false;                  // the SegFault AI panel
+    bool fullscreen = false;              // F11 / start menu: covers the whole screen
     std::string examDate = "2026-11-20";  // the countdown on the desktop ("YYYY-MM-DD")
     int focusWork = 25, focusBreak = 5;   // Focus timer lengths in minutes
     Progress progress;

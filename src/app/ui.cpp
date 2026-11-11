@@ -29,8 +29,13 @@ static bool gIBeam = false;
 static bool gClickConsumed = false;
 
 void SetScale(float s) { gScale = s; }
+static float gExtraX = 0;
+void SetExtraX(float units) { gExtraX = units; }
+float ExtraX() { return gExtraX; }
+Rectangle ScreenRect() { return {-gExtraX, 0, W + 2 * gExtraX, H}; }
 float Scale() { return gScale; }
-void BeginFrame() { gHand = false; gIBeam = false; gClickConsumed = false; gInput = true; }
+static void FontsNewFrame();
+void BeginFrame() { gHand = false; gIBeam = false; gClickConsumed = false; gInput = true; FontsNewFrame(); }
 bool WantsHandCursor() { return gHand; }
 void WantHand() { gHand = true; }
 bool WantsIBeam() { return gIBeam; }
@@ -72,25 +77,50 @@ bool InitFonts(const std::string& dir) {
 }
 
 static int gWarmNext = 0;
+// After a resize the old sizes stay for a while: text uses the nearest one
+// (slightly soft for a moment) instead of every size being made in one frame.
+static std::vector<std::pair<int, Font>> gOldFonts;
+static int gLoadsThisFrame = 0;
+static int gOldFontsFrames = 0;
 
 void ClearFontCache() {
-    for (auto& kv : gFontCache) UnloadFont(kv.second);
+    for (auto& kv : gFontCache) gOldFonts.push_back(kv);
     gFontCache.clear();
     gWarmNext = 0;   // the new scale needs them again
+    gOldFontsFrames = 0;
+}
+
+static bool WarmPending() { return gWarmNext < 9 + F_COUNT * 16; }
+
+static void FontsNewFrame() {
+    gLoadsThisFrame = 0;
+    // the old sizes go once the new ones are made (or after ~5 s anyway)
+    if (!gOldFonts.empty() && (!WarmPending() || ++gOldFontsFrames > 300)) {
+        for (auto& kv : gOldFonts) UnloadFont(kv.second);
+        gOldFonts.clear();
+    }
 }
 
 bool WarmFonts() {
-    // every kind at the sizes the screens use (11 to 26 canvas units), one per call
-    const int lo = 11, hi = 26, perKind = hi - lo + 1, total = F_COUNT * perKind;
+    // first the big sizes a few screens use (desktop, Focus, titles), then every
+    // kind at the usual sizes (11 to 26 canvas units); one per call
+    static const struct { FontKind k; float size; } big[] = {
+        {F_MONOBOLD, 240}, {F_HEAVY, 58}, {F_MONOBOLD, 78}, {F_DISPLAY, 22}, {F_DISPLAY, 30},
+        {F_DISPLAY, 38}, {F_DISPLAY, 42}, {F_DISPLAY, 44}, {F_HEAVY, 40},
+    };
+    const int nBig = (int)(sizeof(big) / sizeof(big[0]));
+    const int lo = 11, hi = 26, perKind = hi - lo + 1, total = nBig + F_COUNT * perKind;
     if (gWarmNext >= total) return false;
-    int kind = gWarmNext / perKind, size = lo + gWarmNext % perKind;
-    gWarmNext++;
-    GetFont((FontKind)kind, (float)size);
+    int i = gWarmNext++;
+    if (i < nBig) GetFont(big[i].k, big[i].size);
+    else { i -= nBig; GetFont((FontKind)(i / perKind), (float)(lo + i % perKind)); }
     return true;
 }
 
 void UnloadFonts() {
     ClearFontCache();
+    for (auto& kv : gOldFonts) UnloadFont(kv.second);
+    gOldFonts.clear();
     for (int i = 0; i < F_COUNT; i++) if (gFontData[i]) { UnloadFileData(gFontData[i]); gFontData[i] = nullptr; }
 }
 
@@ -115,9 +145,27 @@ Font GetFont(FontKind kind, float size) {
     int key = kind * 10000 + px;
     auto it = gFontCache.find(key);
     if (it != gFontCache.end()) return it->second;
+    // one new font a frame at most: past that, the nearest size of this kind will do
+    if (gLoadsThisFrame >= 1) {
+        const Font* best = nullptr;
+        int bestDiff = 1 << 30;
+        auto consider = [&](int k, const Font& f) {
+            if (k / 10000 != kind) return;
+            int d = std::abs(k % 10000 - px);
+            if (d < bestDiff) { bestDiff = d; best = &f; }
+        };
+        for (auto& kv : gFontCache) consider(kv.first, kv.second);
+        for (auto& kv : gOldFonts) consider(kv.first, kv.second);
+        if (best) return *best;
+    }
+    gLoadsThisFrame++;
     Font f;
     if (gFontData[kind]) {
-        const std::vector<int>& cps = FontCodepoints();
+        // big sizes are numbers, symbols and English titles: fewer characters make
+        // them much faster to build (the huge one is only the desktop's {*})
+        static std::vector<int> ascii, mark = {' ', '*', '{', '}'};
+        if (ascii.empty()) for (int c = 32; c <= 126; c++) ascii.push_back(c);
+        const std::vector<int>& cps = px >= 120 ? mark : px >= 48 ? ascii : FontCodepoints();
         f = LoadFontFromMemory(".ttf", gFontData[kind], gFontSize[kind], px, const_cast<int*>(cps.data()), (int)cps.size());
         SetTextureFilter(f.texture, TEXTURE_FILTER_POINT);
         // small sizes round the space advance down to almost nothing: enforce a minimum
@@ -132,19 +180,21 @@ Font GetFont(FontKind kind, float size) {
 }
 
 static float Snap(float v) { return std::round(v * gScale) / gScale; }
+// The pixel size a text size is drawn at (the font made for it has the same).
+static float PixelSize(float size) { return (float)std::max(6L, std::lround(size * gScale)); }
 
 // Text is drawn at exactly the font's pixel size (baseSize / scale in canvas
 // units), so every glyph lands on whole pixels: no blurry, resampled text.
 void Text(const std::string& s, float x, float y, float size, Color c, FontKind k) {
     if (s.empty()) return;
     Font f = GetFont(k, size);
-    DrawTextEx(f, s.c_str(), {Snap(x), Snap(y)}, f.baseSize / gScale, 0, c);
+    DrawTextEx(f, s.c_str(), {Snap(x), Snap(y)}, PixelSize(size) / gScale, 0, c);
 }
 
 Vector2 Measure(const std::string& s, float size, FontKind k) {
     if (s.empty()) return {0, size};
     Font f = GetFont(k, size);
-    return MeasureTextEx(f, s.c_str(), f.baseSize / gScale, 0);
+    return MeasureTextEx(f, s.c_str(), PixelSize(size) / gScale, 0);
 }
 
 void TextCenter(const std::string& s, Rectangle r, float size, Color c, FontKind k) {
@@ -427,7 +477,8 @@ void SoftGlow(Vector2 center, float radius, Color c, float strength) {
 
 void Backdrop(float time) {
     bool light = Themes()[CurrentTheme()].light;
-    DrawRectangleGradientV(0, 0, (int)W, (int)H, col::bg, Mix(col::bg, col::bg2, 0.8f));
+    Rectangle sr = ScreenRect();
+    DrawRectangleGradientV((int)sr.x, 0, (int)sr.width + 1, (int)H, col::bg, Mix(col::bg, col::bg2, 0.8f));
     float a = light ? 0.13f : 0.11f;
     float dx = std::sin(time * 0.13f) * 30, dy = std::cos(time * 0.11f) * 20;
     SoftGlow({1080 + dx, 90 + dy}, 560, col::accent, a);
@@ -688,7 +739,7 @@ void DrawScrollBar(Rectangle view, float contentHeight, float y, bool dragging) 
 }
 
 static void ApplyClip(Rectangle r) {
-    BeginScissorMode((int)std::floor(r.x * gScale), (int)std::floor(r.y * gScale),
+    BeginScissorMode((int)std::floor((r.x + gExtraX) * gScale), (int)std::floor(r.y * gScale),
                      (int)std::ceil(r.width * gScale), (int)std::ceil(r.height * gScale));
 }
 void BeginClip(Rectangle r) {

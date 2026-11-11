@@ -105,13 +105,15 @@ public:
 
     void Frame(float dt) override {
         t += dt;
-        const Rectangle bar = {0, H - 54, W, 54};
+        const Rectangle scr = ScreenRect();   // the whole screen, wider than 1280 on wide displays
+        const float L = scr.x, R = scr.x + scr.width;
+        const Rectangle bar = {L, H - 54, scr.width, 54};
         const Rectangle startBtn = {W / 2 - 126, H - 49, 44, 44};
         const bool busy = opening >= 0 || shutting >= 0;
         const bool input = InputEnabled() && !busy;
 
         Wallpaper();
-        ExamWidget({W - 336, 36, 300, 168}, input && !menu);
+        ExamWidget({R - 336, 36, 300, 168}, input && !menu);
 
         // ---- the icons: click selects, double-click opens
         bool clickedIcon = false;
@@ -148,7 +150,7 @@ public:
 
         // ---- taskbar
         DrawRectangleRec(bar, Alpha(Mix(col::bg2, col::panel, 0.5f), 0.94f));
-        DrawRectangleRec({0, bar.y, W, 1}, col::border);
+        DrawRectangleRec({L, bar.y, scr.width, 1}, col::border);
         if (TaskButton(startBtn, input, menu)) menu = !menu;
         for (int i = 0; i < 4; i++)   // the start button: four tiles
             RoundRect({startBtn.x + 12 + (i % 2) * 11.0f, startBtn.y + 12 + (i / 2) * 11.0f, 9, 9}, 2.5f,
@@ -162,11 +164,11 @@ public:
             if (input && !menu && MouseIn(b)) Tooltip(b, kAppName[i]);
         }
         Clock(bar);
-        Text("SegFault OS", 18, bar.y + 18, 14, col::dim, F_BOLD);
+        Text("SegFault OS", L + 18, bar.y + 18, 14, col::dim, F_BOLD);
         if (focus::Active()) {   // the timer, next to the clock
             std::string s = std::string(focus::CurrentPhase() == focus::WORK ? "Focus " : "Break ") + focus::Clock(focus::Remaining());
             float w = Measure(s, 13.5f, F_MONOBOLD).x + 30;
-            Rectangle pill = {W - 120 - w, bar.y + 11, w, 32};
+            Rectangle pill = {R - 120 - w, bar.y + 11, w, 32};
             Color c = focus::CurrentPhase() == focus::WORK ? col::accent : col::success;
             bool hover = input && !menu && MouseIn(pill);
             RoundRect(pill, 16, Alpha(c, hover ? 0.24f : 0.14f));
@@ -183,7 +185,7 @@ public:
         // ---- opening: a window grows out of the icon to fill the screen
         if (opening >= 0) {
             float k = EaseInOut((t - opening) / 0.45f);
-            Rectangle w = Lerp(openFrom, {0, 0, W, H}, k);
+            Rectangle w = Lerp(openFrom, scr, k);
             Shadow(w, 12 * (1 - k), 2);
             RoundRect(w, 12 * (1 - k), col::panel);
             Rectangle title = {w.x, w.y, w.width, std::min(36.0f, w.height)};
@@ -202,7 +204,7 @@ public:
         // ---- shutting down
         if (shutting >= 0) {
             float k = EaseOutCubic((t - shutting) / 0.7f);
-            DrawRectangleRec({0, 0, W, H}, Alpha(BLACK, k));
+            DrawRectangleRec(scr, Alpha(BLACK, k));
             TextCenter("Shutting down...", {0, H / 2 - 12, W, 24}, 16, Alpha(WHITE, k), F_MONO);
             if (t - shutting > 0.9f) app.quitRequested = true;
         }
@@ -215,7 +217,7 @@ private:
     bool menu = false;
     Rectangle openFrom = {0, 0, 0, 0};
 
-    static Rectangle IconRect(int i) { return {44, 40 + i * 136.0f, 104, 126}; }
+    static Rectangle IconRect(int i) { return {-ExtraX() + 44, 40 + i * 136.0f, 104, 126}; }   // the screen's left edge
 
     void Open(int kind, Rectangle from) {
         if (opening >= 0) return;
@@ -237,7 +239,8 @@ private:
     void Wallpaper() {
         SoftGlow({W / 2, H / 2 - 30}, 420, col::accent, 0.12f);
         SoftGlow({W / 2 + 220, H / 2 + 120}, 300, col::accent2, 0.08f);
-        DotGrid({0, 0, W, H - 54}, 28, Alpha(col::border, 0.35f));
+        Rectangle scr = ScreenRect();
+        DotGrid({scr.x, 0, scr.width, H - 54}, 28, Alpha(col::border, 0.35f));
         const float fs = 240;
         TextCenter("{*}", {0, H / 2 - fs / 2 - 40, W, fs}, fs, Alpha(col::heading, 0.05f), F_MONOBOLD);
         TextCenter("SegFault OS", {0, H / 2 + 92, W, 30}, 22, Alpha(col::heading, 0.09f), F_DISPLAY);
@@ -334,12 +337,12 @@ private:
         char hm[8], date[16];
         std::snprintf(hm, sizeof(hm), "%02d:%02d", tm.tm_hour, tm.tm_min);
         std::snprintf(date, sizeof(date), "%02d/%02d/%04d", tm.tm_mday, tm.tm_mon + 1, tm.tm_year + 1900);
-        TextRight(hm, W - 18, bar.y + 9, 14, col::heading, F_BOLD);
-        TextRight(date, W - 18, bar.y + 29, 12, col::dim, F_MEDIUM);
+        TextRight(hm, W + ExtraX() - 18, bar.y + 9, 14, col::heading, F_BOLD);
+        TextRight(date, W + ExtraX() - 18, bar.y + 29, 12, col::dim, F_MEDIUM);
     }
 
     void StartMenu(Rectangle start, bool input) {
-        const float h = 454;
+        const float h = 510;
         Rectangle m = {W / 2 - 180, H - 54 - 12 - h, 360, h};
         Shadow(m, 14, 2);
         RoundRect(m, 14, Mix(col::panel, col::bg2, 0.3f));
@@ -372,6 +375,22 @@ private:
         Text("Open SegFault at start-up", opt.x + 44, opt.y + 8, 14, col::text, F_MEDIUM);
         Text("skips this desktop", opt.x + 44, opt.y + 27, 12, col::faint, F_MEDIUM);
         if (oh && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) { app.bootToApp = !app.bootToApp; SaveAppSettings(); }
+
+        // full screen, like a real operating system (F11 does the same)
+        Rectangle fs = {m.x + 12, m.y + 354, m.width - 24, 50};
+        bool fsh = input && MouseIn(fs);
+        if (fsh) { RoundRect(fs, 10, Alpha(col::heading, 0.06f)); WantHand(); }
+        Rectangle fb = {fs.x + 12, fs.y + 15, 20, 20};
+        RoundRect(fb, 5, app.fullscreen ? col::accent : Alpha(col::panelHi, 1));
+        RoundRectLines(fb, 5, 1, app.fullscreen ? col::accent : col::border);
+        if (app.fullscreen) {
+            Color on = OnColor(col::accent);
+            DrawLineEx({fb.x + 5, fb.y + 10}, {fb.x + 9, fb.y + 14}, 2, on);
+            DrawLineEx({fb.x + 9, fb.y + 14}, {fb.x + 15, fb.y + 6}, 2, on);
+        }
+        Text("Full screen", fs.x + 44, fs.y + 8, 14, col::text, F_MEDIUM);
+        Text("covers the Windows taskbar  -  F11", fs.x + 44, fs.y + 27, 12, col::faint, F_MEDIUM);
+        if (fsh && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) { ToggleBorderlessWindowed(); app.fullscreen = !app.fullscreen; SaveAppSettings(); }
 
         // footer: shut down
         DrawRectangleRec({m.x, m.y + m.height - 62, m.width, 1}, col::border);

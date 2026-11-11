@@ -166,7 +166,7 @@ void DrawAlert() {
     float t = (float)GetTime() - alertAt;
     float k = std::min(1.0f, t / 0.25f);
     float e = 1 - (1 - k) * (1 - k) * (1 - k);
-    DrawRectangleRec({0, 0, W, H}, Alpha(BLACK, 0.45f * e));
+    DrawRectangleRec(ScreenRect(), Alpha(BLACK, 0.45f * e));
 
     const bool toBreak = alertFrom == WORK;
     const Color c = toBreak ? col::success : col::accent;

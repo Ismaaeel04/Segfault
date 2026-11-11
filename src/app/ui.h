@@ -27,6 +27,12 @@ Color Alpha(Color c, float a);
 // ------------------------------------------------------------- frame -----
 void SetScale(float s);          // called by main when the window size changes
 float Scale();
+// On screens wider than 16:10 the canvas grows sideways: ExtraX() more units
+// on each side, so x runs from -ExtraX() to W + ExtraX(). Screens keep their
+// layout in 0..W (centred); backgrounds and the desktop use the whole width.
+void SetExtraX(float units);
+float ExtraX();
+Rectangle ScreenRect();          // the whole visible canvas
 void BeginFrame();               // resets per-frame input state
 Vector2 Mouse();                 // mouse in virtual canvas coordinates
 bool MouseIn(Rectangle r);

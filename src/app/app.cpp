@@ -191,6 +191,7 @@ void SaveAppSettings() {
     out << "trail " << (app.progress.trail ? 1 : 0) << "\n";
     out << "cursor " << (app.progress.customCursor ? 1 : 0) << "\n";
     out << "direct " << (app.bootToApp ? 1 : 0) << "\n";
+    out << "fullscreen " << (app.fullscreen ? 1 : 0) << "\n";
     out << "exam " << app.examDate << "\n";
     out << "focus " << app.focusWork << " " << app.focusBreak << "\n";
     if (!app.user.empty()) out << "user " << app.user << "\n";
@@ -217,6 +218,7 @@ void LoadLastTheme(bool restoreSession) {
         else if (key == "trail") in >> app.progress.trail;
         else if (key == "cursor") in >> app.progress.customCursor;
         else if (key == "direct") in >> app.bootToApp;
+        else if (key == "fullscreen") in >> app.fullscreen;
         else if (key == "exam") in >> app.examDate;
         else if (key == "focus") in >> app.focusWork >> app.focusBreak;
         else if (key == "user") in >> savedUser;

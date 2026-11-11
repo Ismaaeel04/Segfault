@@ -42,7 +42,7 @@ void Preview(Rectangle r, const Theme& t) {
 
 void ThemePicker() {
     SetInputEnabled(true);
-    DrawRectangleRec({0, 0, W, H}, Alpha(BLACK, 0.55f));
+    DrawRectangleRec(ScreenRect(), Alpha(BLACK, 0.55f));
 
     const auto& themes = Themes();
     const float cardW = 224, cardH = 196, gap = 16, pad = 28;

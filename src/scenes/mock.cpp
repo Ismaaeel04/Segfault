@@ -206,7 +206,7 @@ private:
 
     void ConfirmModal() {
         SetInputEnabled(true);
-        DrawRectangleRec({0, 0, W, H}, Alpha(BLACK, 0.6f));
+        DrawRectangleRec(ScreenRect(), Alpha(BLACK, 0.6f));
         Rectangle r = {W / 2 - 250, H / 2 - 110, 500, 220};
         Panel(r, col::panel, 16);
         Text("Submit the exam?", r.x + 30, r.y + 28, 23, col::heading, F_HEAVY);

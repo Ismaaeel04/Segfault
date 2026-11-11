@@ -131,24 +131,25 @@ static bool TopBar(Scene* scene) {
     const bool home = app.current == SceneId::Home, login = app.current == SceneId::Login;
 
     // ---- background: a soft tint, two slow glows, a line of flowing colour
-    DrawRectangleGradientV(0, 0, (int)W, (int)bh, Mix(col::bg2, col::accent, 0.06f), col::bg2);
-    BeginClip({0, 0, W, bh});
+    const float L = -ExtraX(), R = W + ExtraX();   // the screen's edges
+    DrawRectangleGradientV((int)L, 0, (int)(R - L) + 1, (int)bh, Mix(col::bg2, col::accent, 0.06f), col::bg2);
+    BeginClip({L, 0, R - L, bh});
     SoftGlow({230 + std::sin(t * 0.31f) * 150, 16}, 250, col::accent, 0.11f);
     SoftGlow({W - 380 + std::cos(t * 0.27f) * 170, 54}, 270, col::accent2, 0.08f);
     EndClip();
     const int segments = 24;
     for (int i = 0; i < segments; i++) {
-        float x0 = W * i / segments, x1 = W * (i + 1) / segments;
+        float x0 = L + (R - L) * i / segments, x1 = L + (R - L) * (i + 1) / segments;
         DrawRectangleGradientEx({x0, bh - 1.5f, x1 - x0, 1.5f}, Flow(x0, t), Flow(x0, t), Flow(x1, t), Flow(x1, t));
     }
     float sweep = std::fmod(t, 6.0f) / 1.8f;   // a glint runs along the line every 6 s
     if (sweep < 1) {
-        float sx = -200 + sweep * (W + 400);
+        float sx = L - 200 + sweep * (R - L + 400);
         Color on = Alpha(WHITE, 0.75f), off = Alpha(WHITE, 0);
         DrawRectangleGradientEx({sx - 110, bh - 2, 110, 2}, off, off, on, on);
         DrawRectangleGradientEx({sx, bh - 2, 110, 2}, on, on, off, off);
     }
-    DrawRectangleGradientV(0, (int)bh, (int)W, 10, Alpha(col::shadow, 0.14f), Alpha(col::shadow, 0));
+    DrawRectangleGradientV((int)L, (int)bh, (int)(R - L) + 1, 10, Alpha(col::shadow, 0.14f), Alpha(col::shadow, 0));
 
     // ---- left: back, logo, where you are
     bool back = false;
@@ -449,6 +450,7 @@ int main(int argc, char** argv) {
     sources::Load(FindSolutionsDir(app.resourceDir));
     app.dataDir = GetApplicationDirectory();
     LoadLastTheme(!shotFile);
+    if (!shotFile && app.fullscreen) ToggleBorderlessWindowed();   // left in full screen last time
     runner::StartDetection(app.resourceDir);
     if (shotFile && argc >= 7) ApplyTheme(ThemeIndex(argv[6]));
     CreateScenes();
@@ -461,7 +463,7 @@ int main(int argc, char** argv) {
     if (shotFile && std::getenv("SEGFAULT_AI_DEMO")) ai::LoadDemo();
 
     RenderTexture2D canvas = {};
-    float currentScale = -1;
+    float currentScale = -1, currentExtra = -1;
     float fade = 1;                       // scene switches fade in
     int frame = 0;
 
@@ -472,18 +474,23 @@ int main(int argc, char** argv) {
         float px = sw > 0 ? rw / sw : 1;                 // pixels per screen point (2 on Retina)
         float scale = std::fmin(rw / W, rh / H);         // pixels per canvas unit
         if (scale <= 0) scale = 1;
-        if (std::fabs(scale - currentScale) > 0.001f) {
+        // wider than 16:10: the canvas grows sideways instead of leaving bars
+        float extra = std::floor(std::fmax(0.0f, (rw / scale - W) * 0.5f));
+        if (std::fabs(scale - currentScale) > 0.001f || extra != currentExtra) {
             if (canvas.id) UnloadRenderTexture(canvas);
-            canvas = LoadRenderTexture((int)std::lround(W * scale), (int)std::lround(H * scale));
+            canvas = LoadRenderTexture((int)std::lround((W + 2 * extra) * scale), (int)std::lround(H * scale));
             SetTextureFilter(canvas.texture, TEXTURE_FILTER_POINT);
-            ui::SetScale(scale);
-            ClearFontCache();
+            if (std::fabs(scale - currentScale) > 0.001f) { ui::SetScale(scale); ClearFontCache(); }
+            ui::SetExtraX(extra);
             currentScale = scale;
+            currentExtra = extra;
         }
         float dw = canvas.texture.width / px, dh = canvas.texture.height / px;   // in screen points
         float offX = std::floor((sw - dw) * 0.5f), offY = std::floor((sh - dh) * 0.5f);
-        SetMouseOffset((int)-offX, (int)-offY);
+        SetMouseOffset((int)std::lround(-offX - extra * scale / px), (int)-offY);   // x = 0 is the left of the 1280 area
         SetMouseScale(px / scale, px / scale);
+        // F11: full screen, like a real operating system (remembered)
+        if (IsKeyPressed(KEY_F11) && !shotFile) { ToggleBorderlessWindowed(); app.fullscreen = !app.fullscreen; SaveAppSettings(); }
 
         // ---- log out: scenes hold the student's open code, exam and quiz --
         if (app.signOutRequested) {
@@ -514,6 +521,7 @@ int main(int argc, char** argv) {
         ClearBackground(col::bg);
         Camera2D cam = {};
         cam.zoom = scale;
+        cam.offset = {extra * scale, 0};
         BeginMode2D(cam);
         ui::BeginFrame();
         Backdrop((float)GetTime());
@@ -523,11 +531,11 @@ int main(int argc, char** argv) {
         const bool pickerWasOpen = app.themePickerOpen || alertWasOpen;
         if (app.aiOpen && !scene->AiAllowed()) app.aiOpen = false;
         const bool aiShown = app.aiOpen && app.current != SceneId::Intro && app.current != SceneId::Desktop && app.current != SceneId::Ai;
-        const bool overAi = aiShown && Mouse().x > W - kAiPanelWidth && Mouse().y > 64;
+        const bool overAi = aiShown && Mouse().x > W + ExtraX() - kAiPanelWidth && Mouse().y > 64;
         if (pickerWasOpen || overAi) SetInputEnabled(false);
         scene->Frame(dt);
         if (fade > 0) {
-            DrawRectangleRec({0, 64, W, H - 64}, Alpha(col::bg, fade));
+            DrawRectangleRec({-extra, 64, W + 2 * extra, H - 64}, Alpha(col::bg, fade));
             fade = std::fmax(0.0f, fade - dt * 7.0f);
         }
         SetInputEnabled(!pickerWasOpen);

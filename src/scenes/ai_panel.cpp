@@ -270,7 +270,7 @@ void AiPanel(Scene* scene, float dt) {
     if (gSlide <= 0) return;
 
     const float e = 1 - (1 - gSlide) * (1 - gSlide);
-    const Rectangle P = {W - kAiPanelWidth * e, 64, kAiPanelWidth, H - 64};
+    const Rectangle P = {W + ExtraX() - kAiPanelWidth * e, 64, kAiPanelWidth, H - 64};
     DrawRectangleGradientH((int)(P.x - 24), (int)P.y, 24, (int)P.height, Alpha(col::shadow, 0), Alpha(col::shadow, 0.22f));
     DrawRectangleRec(P, Mix(col::bg2, col::panel, 0.6f));
     DrawRectangleRec({P.x, P.y, 1, P.height}, col::border);

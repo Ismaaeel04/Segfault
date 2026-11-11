@@ -192,7 +192,7 @@ private:
 
     // The new recovery code, shown once, before the student goes in.
     void CodeWindow() {
-        DrawRectangleRec({0, 0, W, H}, Alpha(BLACK, 0.6f));
+        DrawRectangleRec(ScreenRect(), Alpha(BLACK, 0.6f));
         Rectangle r = {W / 2 - 300, H / 2 - 180, 600, 360};
         Panel(r, col::panel, 18);
         float x = r.x + 32, w = r.width - 64, y = r.y + 28;

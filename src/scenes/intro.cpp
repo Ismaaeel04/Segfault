@@ -60,7 +60,7 @@ public:
         if (leaving < 0 && (finished || (t > 0.3f && (GetKeyPressed() != 0 || IsMouseButtonPressed(MOUSE_BUTTON_LEFT))))) leaving = t;
         if (leaving >= 0 && t - leaving > 0.4f) { Leave(); return; }
 
-        DrawRectangleRec({0, 0, W, H}, Mix(col::bg, BLACK, 0.55f));
+        DrawRectangleRec(ScreenRect(), Mix(col::bg, BLACK, 0.55f));
         const float x = 120, fs = 16, lh = 30;
         float y = 120;
         DrawLogo({x, y - 6, 44, 44}, t * 1.2f, 0.3f);
@@ -110,7 +110,7 @@ public:
         if (p > 0) GradientRoundRect({bar.x, bar.y, std::max(4.0f, bar.width * p), bar.height}, 2, col::accent, col::accent2);
         Text("press any key to skip", x, H - 92, 12.5f, Alpha(col::faint, 0.8f), F_MEDIUM);
 
-        if (leaving >= 0) DrawRectangleRec({0, 0, W, H}, Alpha(BLACK, std::clamp((t - leaving) / 0.4f, 0.0f, 1.0f)));
+        if (leaving >= 0) DrawRectangleRec(ScreenRect(), Alpha(BLACK, std::clamp((t - leaving) / 0.4f, 0.0f, 1.0f)));
     }
 
 private:
