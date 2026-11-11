@@ -26,7 +26,7 @@ The exams are about **writing code**, so the app is too. It has three main parts
 The app starts like a small operating system, **SegFault OS**: a boot console lists what it
 loads (lessons, problems, the compiler it finds), then a desktop with three apps, a countdown
 to the exam, a taskbar and a clock. Double-click an icon to open it; logging out goes back to the
-desktop, and *Shut down* in the start menu closes the program. *Open SegFault at start-up* in the
+desktop (so does **Desktop** on the home screen, without logging out), and *Shut down* in the start menu closes the program. *Open SegFault at start-up* in the
 start menu skips the desktop; any key skips the boot screen. The apps:
 
 - **SegFault**: the lessons, problems, mock exams and quiz (login screen first).
@@ -63,6 +63,24 @@ account created.
 `ABCD-EFGH-JKMN`, once. *Forgot password?* on the login screen takes the username, that code and
 a new password. Each code works once: after a reset the student is given a new one. Accounts
 made before recovery codes existed get a code the next time they log in.
+
+## SegFault AI
+
+**SegFault AI** is a tutor for the exam. Open it from the top bar on any screen (a side panel), or
+as an app of its own from the desktop. In the panel it sees what the screen shows: the problem,
+your code with line numbers and the result of your last run, in Practice and in SegFault Editor, so
+you can just ask "why does it crash?". It gives hints before solutions, explains compile errors and
+crashes, and answers in the language you write in. Buttons under the conversation suggest questions
+for the situation (*Explain this error*, *Why did it crash?*, *Give me a hint*). It is switched off
+during a mock exam.
+
+Behind it is a language model reached over the internet: Gemini (Google) or Claude (Anthropic).
+It is set up by hand, once, by putting a key next to the app: a Gemini key in
+`segfault_gemini_key.txt` (free plan, daily limits; on it Google may use what is sent to improve its
+models) or a Claude key in `segfault_ai_key.txt`, or `GEMINI_API_KEY` / `ANTHROPIC_API_KEY` in the
+environment. Both files are ignored by git. The question, the code and the last run are sent to that
+service to answer. It uses WinHTTP (part of Windows), so it is Windows-only for now; answers stream
+in as they are written. `Segfault --ai-test "question"` checks the connection from a terminal.
 
 ## Themes
 
@@ -136,6 +154,8 @@ raylib is downloaded automatically the first time.
 ./build/paste_tests               # what a text box keeps from pasted text
 ./build/complete_tests            # editor autocompletion: what is suggested, and in what order
 ./build/streak_tests              # activity days and streaks
+./build/json_tests                # the JSON reader/writer used by SegFault AI
+./build/ai_stream_tests           # rebuilding a streamed Claude reply
 ./build/avatar_tests              # profile pictures: crop, round mask, paths with non-ASCII letters
 SEGFAULT_BENCH=1920x1080 ./build/Segfault --shot 0 - out.png 330   # frame times (add
                                   # SEGFAULT_BENCH_TOUR=1 to visit every screen)
