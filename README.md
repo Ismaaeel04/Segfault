@@ -96,7 +96,10 @@ code at a terminal: every test your code passes is a hit, and a compile error le
 Chapter 1 is playable: the Stack Plains (loops and numbers), its Off-by-One Goblins and the
 Infinite Loop Serpent. The menu has New Game, Continue, Restart and Settings (rebindable keys,
 difficulty, question timer, sound). Progress and settings are saved per student in
-`forgotten_pointer.txt`. Everything is drawn with raylib shapes; the sounds are made in code.
+`forgotten_pointer.txt`. Everything is drawn with raylib shapes. The music is MIDI (in
+`resources/music`) played by a small 8-bit synthesiser in the app, with a lo-fi finish; the effects
+(sword, hits, a goblin falling, the boss going down...) and SegFault OS's system sounds are made in
+code too. `Segfault --render-sounds <folder>` writes them all as .wav files.
 
 ## Themes
 
@@ -201,6 +204,7 @@ Windows/macOS builds are DPI-aware, so text stays sharp on any screen.
 
 ## Credits
 raylib (zlib), TinyCC (LGPL 2.1), Inter and JetBrains Mono (SIL OFL 1.1).
+Music: *15 Melodic RPG Chiptunes* by Aureolus_Omicron (CC0), from opengameart.org.
 Colour palettes: Catppuccin, Nord, Dracula, Gruvbox and Everforest (all MIT).
 Content is based on the SETU module material: Lab1.cpp, the Coding Exam 2 brief, and the
 "Pointers in C,C++" and "Memory Management" lecture notes.
