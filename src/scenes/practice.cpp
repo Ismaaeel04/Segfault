@@ -16,6 +16,12 @@ namespace {
 class PracticeScene : public Scene {
 public:
     const char* Title() const override { return ws.problem && open ? ws.problem->title.c_str() : "Practice"; }
+    ai::Screen AiInfo() const override {
+        if (open && ws.problem) return ws.AiInfo("Practice");
+        ai::Screen s;
+        s.label = "Practice - problem list";
+        return s;
+    }
 
     void Enter(const std::string& param) override {
         const Problem* p = param.empty() ? nullptr : ProblemById(param);

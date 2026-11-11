@@ -3,6 +3,7 @@
 // ============================================================================
 #pragma once
 #include "raylib.h"
+#include "assistant.h"
 #include <map>
 #include <set>
 #include <string>
@@ -22,7 +23,7 @@ inline Color TopicColor(int s) { return SectionColor(s); }
 
 // ------------------------------------------------------------- scenes -----
 // New scenes go before Count: --shot selects a scene by its number.
-enum class SceneId { Home, Study, Practice, Mock, Quiz, Visualizer, ListLab, Grid, Login, Leaderboard, Profile, Intro, Roadmap, Desktop, Editor, Focus, Count };
+enum class SceneId { Home, Study, Practice, Mock, Quiz, Visualizer, ListLab, Grid, Login, Leaderboard, Profile, Intro, Roadmap, Desktop, Editor, Focus, Ai, Count };
 
 class Scene {
 public:
@@ -30,6 +31,9 @@ public:
     virtual const char* Title() const = 0;
     virtual void Enter(const std::string& param) { (void)param; }
     virtual void Frame(float dt) = 0;     // update + draw (immediate mode)
+    // What SegFault AI sees on this screen (the problem, the code, the last run).
+    virtual ai::Screen AiInfo() const { ai::Screen s; s.label = Title(); return s; }
+    virtual bool AiAllowed() const { return true; }   // false during a mock exam
 };
 
 // ----------------------------------------------------------- progress -----
@@ -80,6 +84,7 @@ struct App {
     bool themePickerOpen = false;
     bool bootToApp = false;               // skip the SegFault OS desktop (start menu option)
     bool quitRequested = false;           // "Shut down" on the desktop
+    bool aiOpen = false;                  // the SegFault AI panel
     std::string examDate = "2026-11-20";  // the countdown on the desktop ("YYYY-MM-DD")
     int focusWork = 25, focusBreak = 5;   // Focus timer lengths in minutes
     Progress progress;
@@ -124,7 +129,11 @@ std::vector<LeaderRow> LoadLeaderboard();
 void SelectTheme(int index);
 void LoadLastTheme(bool restoreSession = true);   // loads app settings (theme, cursor, trail, last account)
 void SaveAppSettings();                           // persists app-wide settings to segfault_settings.txt
-void ThemePicker();                               // scenes/theme_picker.cpp: draws the window, main opens it
+void ThemePicker();
+// scenes/ai_panel.cpp: the SegFault AI side panel, drawn by main over the scene.
+constexpr float kAiPanelWidth = 460;
+void AiPanel(Scene* scene, float dt);
+void AiFullScreen(Rectangle r);   // SegFault AI as a desktop app                               // scenes/theme_picker.cpp: draws the window, main opens it
 
 // Saved student code per problem (<userDir>/segfault_code/<id>.cpp)
 std::string LoadSavedCode(const std::string& key);
@@ -146,6 +155,7 @@ Scene* CreateRoadmapScene();
 Scene* CreateDesktopScene();
 Scene* CreateEditorScene();
 Scene* CreateFocusScene();
+Scene* CreateAiScene();
 Scene* CreateLeaderboardScene();
 Scene* CreateProfileScene();
 Scene* CreateHomeScene();

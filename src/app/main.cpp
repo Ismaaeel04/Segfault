@@ -19,6 +19,8 @@
 #include "ui.h"
 #include "content/content.h"
 #include <algorithm>
+#include <chrono>
+#include <thread>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -46,6 +48,7 @@ static void CreateScenes() {
     gScenes[(int)SceneId::Desktop].reset(CreateDesktopScene());
     gScenes[(int)SceneId::Editor].reset(CreateEditorScene());
     gScenes[(int)SceneId::Focus].reset(CreateFocusScene());
+    gScenes[(int)SceneId::Ai].reset(CreateAiScene());
     gScenes[(int)SceneId::Leaderboard].reset(CreateLeaderboardScene());
     gScenes[(int)SceneId::Profile].reset(CreateProfileScene());
 }
@@ -83,8 +86,8 @@ static Color Flow(float x, float t) {
 }
 
 // While the Focus timer runs: its time, right-aligned at `right`. Opens Focus.
-static void FocusPill(float right) {
-    if (!focus::Active() || app.current == SceneId::Focus) return;
+static float FocusPill(float right) {
+    if (!focus::Active() || app.current == SceneId::Focus) return right;
     const bool work = focus::CurrentPhase() == focus::WORK;
     const Color c = work ? col::accent : col::success;
     std::string s = focus::Clock(focus::Remaining());
@@ -102,6 +105,25 @@ static void FocusPill(float right) {
     Text(s, r.x + 32, 24, 14, col::heading, F_MONOBOLD);
     if (hover) WantHand();
     if (Clicked(r)) app.Open(SceneId::Focus, "", app.currentParam);
+    return r.x - 12;
+}
+
+// "SegFault AI": opens the side panel. Off during a mock exam. Returns its left edge.
+static float AiButton(Scene* scene, float right) {
+    if (app.current == SceneId::Ai) return right;
+    const float w = 128;
+    Rectangle r = {right - w, 15, w, 34};
+    bool allowed = scene->AiAllowed();
+    if (app.aiOpen) { RoundRect(r, 9, Alpha(col::accent, 0.18f)); RoundRectLines(r, 9, 1, Alpha(col::accent, 0.5f)); }
+    if (Button(r, "       SegFault AI", BTN_GHOST, allowed, 13.5f)) app.aiOpen = !app.aiOpen;
+    // the mark: SegFault AI's sparkle
+    Sparkle({r.x + 19, r.y + r.height / 2}, 8.5f, allowed ? col::accent : col::faint);
+    if (!allowed && MouseIn(r)) {
+        Rectangle tip = {r.x - 30, r.y + 40, r.width + 60, 26};
+        RoundRect(tip, 7, col::panelHi);
+        TextCenter("Off during a mock exam", tip, 12, col::heading, F_BOLD);
+    }
+    return r.x - 12;
 }
 
 static bool TopBar(Scene* scene) {
@@ -157,29 +179,35 @@ static bool TopBar(Scene* scene) {
         float cx = tx + Measure("SegFault", 17, F_DISPLAY).x + 14;
         DrawLineEx({cx - 2, 26}, {cx + 3, 32}, 2, col::faint);
         DrawLineEx({cx + 3, 32}, {cx - 2, 38}, 2, col::faint);
-        float pillW = focus::Active() && app.current != SceneId::Focus ? 112 : 0;
+        float pillW = (focus::Active() && app.current != SceneId::Focus ? 112 : 0) + 140;   // + the SegFault AI button
         Text(Ellipsize(scene->Title(), 19, F_HEAVY, W - 252 - 112 - 24 - pillW - (cx + 16)), cx + 16, 20, 19, col::heading, F_HEAVY);
     }
 
     // ---- right
-    if (login) { ThemeButton({W - 124, 15, 100, 34}); FocusPill(W - 124 - 12); return false; }
+    if (login) { ThemeButton({W - 124, 15, 100, 34}); FocusPill(AiButton(scene, W - 124 - 12)); return false; }
     const Progress& p = app.progress;
     float bx = W - 252;
     ThemeButton({bx - 112, 15, 100, 34});
-    if (!home) FocusPill(bx - 112 - 12);
+    if (!home) FocusPill(AiButton(scene, bx - 112 - 12));
     // Only on Home, so nobody logs out by accident in the middle of an exam.
     if (home && !app.user.empty()) {
         if (Button({bx - 208, 15, 88, 34}, "Log out", BTN_GHOST, true, 13.5f)) app.signOutRequested = true;
+        // the desktop, without logging out
+        Rectangle desk = {bx - 316, 15, 100, 34};
+        if (Button(desk, "       Desktop", BTN_GHOST, true, 13.5f)) app.Go(SceneId::Desktop, "home");
+        for (int i = 0; i < 4; i++)
+            RoundRect({desk.x + 13 + (i % 2) * 7.0f, desk.y + 11 + (i / 2) * 7.0f, 5.5f, 5.5f}, 1.5f,
+                      i == 0 ? col::accent : i == 3 ? col::accent2 : Mix(col::accent, col::accent2, 0.5f));
         // the name opens the profile
         float nw = Measure(app.user, 14.5f, F_BOLD).x;
-        Rectangle name = {bx - 220 - nw - 36, 15, nw + 44, 34};
+        Rectangle name = {bx - 328 - nw - 36, 15, nw + 44, 34};
         bool hover = MouseIn(name);
         if (hover) { RoundRect(name, 17, col::panelHi); WantHand(); }
         avatar::Draw({name.x + 6, name.y + 5, 24, 24}, app.user, app.progress.avatarColour);
         Text(app.user, name.x + 36, 23, 14.5f, hover ? col::heading : col::text, F_BOLD);
         if (Clicked(name)) app.Go(SceneId::Profile, "");
-        FocusPill(name.x - 12);
-    } else if (home) FocusPill(bx - 112 - 12);
+        FocusPill(AiButton(scene, name.x - 12));
+    } else if (home) FocusPill(AiButton(scene, bx - 112 - 12));
 
     // level and XP: the bar fills smoothly, with a glint running along it
     static float shown = -1;
@@ -240,7 +268,8 @@ static int SelfTest(bool quick) {
             if (p.cppOnly && !c.cpp) continue;
             RunReport r = RunCode(p, p.solution, &c);
             if (r.status != RunReport::Accepted) {
-                fail("[" + c.label + "] " + p.id + ": " + StatusText(r.status) + " " + std::to_string(r.passed) + "/" + std::to_string(r.total));
+                fail("[" + c.label + "] " + p.id + ": " + StatusText(r.status) + " " + std::to_string(r.passed) + "/" + std::to_string(r.total) +
+                     " exit " + ExitCodeText(r.exitCode) + " run " + std::to_string((int)r.runMs) + " ms");
                 if (!r.compileLog.empty()) printf("%s\n", r.compileLog.substr(0, 1500).c_str());
                 for (auto& cs : r.cases) if (!cs.ok) printf("   case %d: in=%s exp=[%s] got=[%s]\n", cs.id, cs.input.c_str(), cs.expected.c_str(), cs.got.c_str());
             }
@@ -342,6 +371,23 @@ static int SelfTest(bool quick) {
 int main(int argc, char** argv) {
     ApplyTheme(0);
     if (argc >= 2 && std::strcmp(argv[1], "--selftest") == 0) return SelfTest(argc >= 3 && std::strcmp(argv[2], "quick") == 0);
+    // --ai-test "question": asks SegFault AI with the saved key and prints the answer (checks the connection)
+    if (argc >= 3 && std::strcmp(argv[1], "--ai-test") == 0) {
+        app.dataDir = GetApplicationDirectory();
+        printf("provider: %s, key saved: %s\n", ai::ProviderName(ai::ActiveProvider()), ai::HasKey() ? "yes" : "no");
+        if (!ai::HasKey()) return 1;
+        ai::Ask(argv[2], ai::Screen());
+        auto t0 = std::chrono::steady_clock::now();   // no window here, so no raylib clock
+        while (ai::Busy() && std::chrono::steady_clock::now() - t0 < std::chrono::seconds(90)) {
+            ai::Poll();
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        }
+        ai::Poll();
+        const auto& turns = ai::Turns();
+        if (turns.empty()) return 1;
+        printf("%s\n%s\n", turns.back().failed ? "FAILED:" : "answer:", turns.back().text.c_str());
+        return turns.back().failed ? 1 : 0;
+    }
 
     // Optional: --shot <scene> <param> <file.png> [frames] [theme] renders one screen in
     // a hidden window (it never takes the focus) and exits.
@@ -410,6 +456,9 @@ int main(int argc, char** argv) {
 
     if (shotFile) app.Go((SceneId)shotScene, shotParam);
     else app.Go(SceneId::Intro, app.user.empty() ? "login" : "home");
+    // screenshots of the SegFault AI panel
+    if (shotFile && std::getenv("SEGFAULT_AI_OPEN")) app.aiOpen = true;
+    if (shotFile && std::getenv("SEGFAULT_AI_DEMO")) ai::LoadDemo();
 
     RenderTexture2D canvas = {};
     float currentScale = -1;
@@ -469,9 +518,13 @@ int main(int argc, char** argv) {
         ui::BeginFrame();
         Backdrop((float)GetTime());
         focus::Update();
+        WarmFonts();   // one font size per frame until the usual ones are ready
         const bool alertWasOpen = focus::AlertOpen();
         const bool pickerWasOpen = app.themePickerOpen || alertWasOpen;
-        if (pickerWasOpen) SetInputEnabled(false);
+        if (app.aiOpen && !scene->AiAllowed()) app.aiOpen = false;
+        const bool aiShown = app.aiOpen && app.current != SceneId::Intro && app.current != SceneId::Desktop && app.current != SceneId::Ai;
+        const bool overAi = aiShown && Mouse().x > W - kAiPanelWidth && Mouse().y > 64;
+        if (pickerWasOpen || overAi) SetInputEnabled(false);
         scene->Frame(dt);
         if (fade > 0) {
             DrawRectangleRec({0, 64, W, H - 64}, Alpha(col::bg, fade));
@@ -480,9 +533,12 @@ int main(int argc, char** argv) {
         SetInputEnabled(!pickerWasOpen);
         // the boot screen and the desktop are full screen: no top bar
         bool back = app.current == SceneId::Intro || app.current == SceneId::Desktop ? false : TopBar(scene);
+        if (app.current != SceneId::Intro && app.current != SceneId::Desktop && app.current != SceneId::Ai) AiPanel(scene, dt);
+        const bool escClosesAi = aiShown && IsKeyPressed(KEY_ESCAPE) && !AnyTextFocused() && !pickerWasOpen;
+        if (escClosesAi) app.aiOpen = false;
         if (app.themePickerOpen && !alertWasOpen) ThemePicker();
         if (alertWasOpen) { SetInputEnabled(true); focus::DrawAlert(); }
-        if ((back || (IsKeyPressed(KEY_ESCAPE) && !AnyTextFocused() && !pickerWasOpen)) && app.current != SceneId::Home && app.current != SceneId::Login &&
+        if ((back || (IsKeyPressed(KEY_ESCAPE) && !escClosesAi && !AnyTextFocused() && !pickerWasOpen)) && app.current != SceneId::Home && app.current != SceneId::Login &&
             app.current != SceneId::Intro && app.current != SceneId::Desktop) {
             if (app.hasReturn) {
                 SceneId to = app.returnScene;
@@ -518,7 +574,8 @@ int main(int argc, char** argv) {
             }
             benchLast = now;
             // tour: a new screen every 12 frames, as a student clicking around would
-            if (benchTour && frame % 12 == 0) {
+            // after the font warm-up, as in the app (the boot screen covers it)
+            if (benchTour && frame > 130 && frame % 12 == 0) {
                 static const SceneId tour[] = {SceneId::Home, SceneId::Study, SceneId::Practice, SceneId::Mock,
                                                SceneId::Quiz, SceneId::Visualizer, SceneId::ListLab, SceneId::Grid, SceneId::Login,
                                                SceneId::Desktop, SceneId::Editor, SceneId::Focus};

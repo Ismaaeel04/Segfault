@@ -38,7 +38,7 @@ add_executable(Segfault ${APP_SOURCES})
 target_include_directories(Segfault PRIVATE src)
 target_link_libraries(Segfault PRIVATE raylib exam_solutions)
 if (WIN32)
-    target_link_libraries(Segfault PRIVATE comdlg32)   # the "open file" window
+    target_link_libraries(Segfault PRIVATE comdlg32 winhttp)   # the "open file" window; SegFault AI's HTTPS
 endif()
 if (SEGFAULT_RAYLIB_BUNDLED AND NOT BUILD_SHARED_LIBS)
     # raylib is built here with GLFW inside: theme-coloured system cursors
@@ -114,3 +114,9 @@ add_test(NAME complete COMMAND complete_tests)
 
 add_executable(streak_tests tests/test_streak.cpp)
 add_test(NAME streak COMMAND streak_tests)
+
+add_executable(json_tests tests/test_json.cpp)
+add_test(NAME json COMMAND json_tests)
+
+add_executable(ai_stream_tests tests/test_ai_stream.cpp)
+add_test(NAME ai_stream COMMAND ai_stream_tests)

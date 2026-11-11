@@ -64,6 +64,25 @@ class EditorScene : public Scene {
 public:
     ~EditorScene() override { SaveNow(); }
     const char* Title() const override { return "SegFault Editor"; }
+    ai::Screen AiInfo() const override {
+        ai::Screen s;
+        s.isEditor = true;
+        s.label = "SegFault Editor" + (current.empty() ? std::string() : " - " + current);
+        if (current.empty()) return s;
+        std::string c = "SegFault Editor (the student's own code, not an exam problem). File: " + current + "\n\n";
+        c += ai::NumberLines(code.Text());
+        std::string in = stdinBox.Text();
+        if (!in.empty()) c += "\nInput given to the program:\n" + in.substr(0, 1000) + "\n";
+        if (hasResult) {
+            s.status = last.status;
+            c += std::string("\nLast run: ") + (last.status == RunReport::Accepted ? "finished normally (exit code 0)" : StatusText(last.status)) + "\n";
+            if (last.status == RunReport::RuntimeError) c += "Exit: " + ExitCodeText(last.exitCode) + "\n";
+            if (!last.compileLog.empty()) c += "Compiler output:\n" + last.compileLog.substr(0, 3000) + "\n";
+            if (!last.stdoutText.empty()) c += "It printed:\n" + last.stdoutText.substr(0, 1500) + "\n";
+        }
+        s.context = c;
+        return s;
+    }
 
     void Enter(const std::string&) override {
         t = 0;

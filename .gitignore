@@ -8,4 +8,8 @@ segfault_progress.txt
 segfault_settings.txt
 segfault_theme.txt
 segfault_users/
+segfault_scratch/
+segfault_ai_key.txt
+segfault_gemini_key.txt
+segfault_ai_provider.txt
 .DS_Store

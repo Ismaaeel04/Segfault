@@ -36,6 +36,7 @@ const Paper kPapers[3] = {
 class MockScene : public Scene {
 public:
     const char* Title() const override { return state == S_RUN ? "Mock Exam - in progress" : "Mock Exam"; }
+    bool AiAllowed() const override { return state != S_RUN; }   // no help during the exam
 
     void Frame(float dt) override {
         (void)dt;

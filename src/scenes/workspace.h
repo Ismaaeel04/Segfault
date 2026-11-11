@@ -28,6 +28,7 @@ public:
     // true for one frame after a submit that passed every test
     bool TakeSolved() { bool s = solvedEvent; solvedEvent = false; return s; }
     void SaveNow();
+    ai::Screen AiInfo(const char* where) const;   // for SegFault AI
 
 private:
     CodeEditor editor;

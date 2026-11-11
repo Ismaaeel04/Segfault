@@ -53,6 +53,40 @@ void Workspace::Open(const Problem* p, const std::string& key, bool exam) {
     dirtySince = -1;
 }
 
+ai::Screen Workspace::AiInfo(const char* where) const {
+    ai::Screen s;
+    if (!problem) return s;
+    const Problem& p = *problem;
+    s.label = std::string(where) + " - " + p.title;
+    std::string c = std::string(where) + " problem: " + p.title + " (" + DifficultyName(p.difficulty) + ", " + SectionName(p.section) + ")\n\n";
+    c += "Statement:\n" + p.statement + "\n";
+    for (size_t i = 0; i < p.examples.size(); i++)
+        c += "Example " + std::to_string(i + 1) + ": input " + p.examples[i].input + " -> output " + p.examples[i].output + "\n";
+    if (!p.constraints.empty()) c += "Constraints: " + p.constraints + "\n";
+    if (!p.ruleText.empty()) c += "Exam rule: " + p.ruleText + "\n";
+    c += std::string("Language: ") + (p.cppOnly ? "C++" : "C (C++ compilers also accepted)") + "\n";
+    c += "Hints the app offers: " + std::to_string(p.hints.size()) + "\n\n";
+    c += "Student's code:\n" + ai::NumberLines(editor.Text());
+    if (hasReport) {
+        s.status = report.status;
+        c += "\nLast " + std::string(lastSubmit ? "submit" : "run") + ": " + StatusText(report.status);
+        if (report.total > 0) c += ", " + std::to_string(report.passed) + "/" + std::to_string(report.total) + " tests passed";
+        c += "\n";
+        if (!report.compileLog.empty()) c += "Compiler output:\n" + report.compileLog.substr(0, 3000) + "\n";
+        if (!report.ruleMessage.empty()) c += report.ruleMessage + "\n";
+        int shown = 0;
+        for (const CaseResult& cs : report.cases) {
+            if (cs.ok || shown >= 3) continue;
+            c += "Failing test " + std::to_string(cs.id) + ": input " + cs.input + " | expected " + cs.expected + " | got " + cs.got + "\n";
+            shown++;
+        }
+        if (report.status == RunReport::RuntimeError) c += "The program crashed (exit code " + std::to_string(report.exitCode) + ").\n";
+        if (!report.stdoutText.empty()) c += "It printed:\n" + report.stdoutText.substr(0, 1500) + "\n";
+    }
+    s.context = c;
+    return s;
+}
+
 void Workspace::SaveNow() {
     if (problem && !saveKey.empty() && dirtySince >= 0) SaveCode(saveKey, editor.Text());
     dirtySince = -1;
