@@ -8,6 +8,7 @@
 #include "app/app.h"
 #include "app/auth.h"
 #include "app/avatar.h"
+#include "app/sound.h"
 #include "app/theme.h"
 #include "app/ui.h"
 #include <cmath>
@@ -70,6 +71,11 @@ public:
         BottomBar();
 
         if (modal) { SetInputEnabled(true); CodeWindow(); }
+        if (quittingAt >= 0) {   // shutting down from here: fade to black while the sound plays
+            float k = std::min(1.0f, (t - quittingAt) / 1.1f);
+            DrawRectangleRec(ScreenRect(), Alpha(BLACK, k));
+            if (t - quittingAt > 1.4f) app.quitRequested = true;
+        }
         // Applied after the fields: on the frame of a click, a text box drops
         // the focus if the click was outside it.
         if (pendingFocus) { FocusWidget(pendingFocus); pendingFocus = 0; }
@@ -80,7 +86,7 @@ private:
     std::string username, password, confirm, code, error;
     int pendingFocus = 0;
     bool locked = true, switching = false;
-    float t = 0, unlockAt = -1;
+    float t = 0, unlockAt = -1, quittingAt = -1;
     // The recovery code on show, and who signs in once it has been saved.
     std::string shownCode, shownFor, shownIntro, shownToast;
 
@@ -88,11 +94,10 @@ private:
     // The desktop's wallpaper, so signing in feels like the same system.
     void Wallpaper() {
         Rectangle scr = ScreenRect();
+        DrawWallpaperMark({W / 2, H / 2 - 40}, 173, 0.05f);   // first: the glows tint it like the rest
         SoftGlow({W / 2, H / 2 - 30}, 460, col::accent, 0.14f);
         SoftGlow({W / 2 + 260, H / 2 + 140}, 320, col::accent2, 0.09f);
         DotGrid(scr, 28, Alpha(col::border, 0.35f));
-        const float fs = 240;
-        TextCenter("{*}", {0, H / 2 - fs / 2 - 40, W, fs}, fs, Alpha(col::heading, 0.04f), F_MONOBOLD);
     }
 
     // The big clock and the date. dy moves it (it slides up when unlocking).
@@ -222,7 +227,7 @@ private:
         DrawLineEx({c.x, c.y - 11}, {c.x, c.y - 2}, 2.2f, ph ? col::danger : col::text);
         const Color dots[3] = {col::accent, col::accent2, col::pointer};
         for (int i = 0; i < 3; i++) DrawCircleV({theme.x + 13 + i * 7.0f, theme.y + 20}, 4, dots[i]);
-        if (ph && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) app.quitRequested = true;
+        if (ph && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && quittingAt < 0) { quittingAt = t; snd::Play(snd::SHUTDOWN); }
         if (th && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) app.themePickerOpen = true;
         if (ph) TextRight("Shut down", power.x - 6, power.y + 12, 13, col::text, F_MEDIUM);
         if (th) TextRight("Theme", theme.x - 6, theme.y + 12, 13, col::text, F_MEDIUM);
@@ -313,6 +318,7 @@ private:
             username = who;
             switching = false;
             mode = Mode::LogIn;
+            snd::Play(snd::LOGON);
             SignIn(who);
             Toast(toast, col::accent2);
         }
@@ -324,7 +330,7 @@ private:
         auth::UserStore store = Store();
         auth::AuthResult res = store.Login(username, password);
         password.clear();
-        if (!res.ok) { error = res.error; pendingFocus = BOX_PASSWORD; return; }
+        if (!res.ok) { error = res.error; pendingFocus = BOX_PASSWORD; snd::Play(snd::ERROR_SOUND); return; }
         // Accounts made before recovery codes existed get one now.
         if (!store.HasRecoveryCode(res.username)) {
             auth::AuthResult made = store.CreateRecoveryCode(res.username);
@@ -337,6 +343,7 @@ private:
         error.clear();
         username = res.username;
         switching = false;
+        snd::Play(snd::LOGON);
         SignIn(res.username);
         Toast("Welcome back, " + res.username, col::accent2);
     }

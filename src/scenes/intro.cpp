@@ -6,6 +6,7 @@
 // ============================================================================
 #include "app/app.h"
 #include "app/runner.h"
+#include "app/sound.h"
 #include "app/theme.h"
 #include "app/ui.h"
 #include "content/content.h"
@@ -61,7 +62,7 @@ public:
         bool finished = shown == (int)lines.size() && compilerDone >= 0 && t - compilerDone > step * 2 + 0.5f;
         bool key = t > 0.3f && (GetKeyPressed() != 0 || IsMouseButtonPressed(MOUSE_BUTTON_LEFT));
         // the console, then the logo with a spinner for a moment, then sign in
-        if (splashAt < 0 && (finished || key)) splashAt = t;
+        if (splashAt < 0 && (finished || key)) { splashAt = t; snd::Play(snd::STARTUP); }
         else if (splashAt >= 0 && leaving < 0 && ((key && t - splashAt > 0.25f) || t - splashAt > 1.7f)) leaving = t;
         if (leaving >= 0 && t - leaving > 0.4f) { Leave(); return; }
 

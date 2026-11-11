@@ -8,6 +8,7 @@
 #include "app/app.h"
 #include "app/avatar.h"
 #include "app/focus.h"
+#include "app/sound.h"
 #include "app/streak.h"
 #include "app/theme.h"
 #include "app/ui.h"
@@ -154,7 +155,7 @@ public:
         // ---- taskbar
         DrawRectangleRec(bar, Alpha(Mix(col::bg2, col::panel, 0.5f), 0.94f));
         DrawRectangleRec({L, bar.y, scr.width, 1}, col::border);
-        if (TaskButton(startBtn, input, menu)) menu = !menu;
+        if (TaskButton(startBtn, input, menu)) { menu = !menu; snd::Play(snd::CLICK); }
         for (int i = 0; i < 4; i++)   // the start button: four tiles
             RoundRect({startBtn.x + 12 + (i % 2) * 11.0f, startBtn.y + 12 + (i / 2) * 11.0f, 9, 9}, 2.5f,
                       i == 0 ? col::accent : i == 3 ? col::accent2 : Mix(col::accent, col::accent2, 0.5f));
@@ -210,10 +211,10 @@ public:
         }
         // ---- shutting down
         if (shutting >= 0) {
-            float k = EaseOutCubic((t - shutting) / 0.7f);
+            float k = EaseOutCubic((t - shutting) / 1.1f);   // slower: the shutdown sound plays
             DrawRectangleRec(scr, Alpha(BLACK, k));
             TextCenter("Shutting down...", {0, H / 2 - 12, W, 24}, 16, Alpha(WHITE, k), F_MONO);
-            if (t - shutting > 0.9f) app.quitRequested = true;
+            if (t - shutting > 1.5f) app.quitRequested = true;
         }
     }
 
@@ -228,6 +229,7 @@ private:
 
     void Open(int kind, Rectangle from) {
         if (opening >= 0) return;
+        snd::Play(snd::OPEN);
         opening = t;
         openApp = kind;
         openFrom = from;
@@ -244,12 +246,11 @@ private:
 
     // a big faint {*} and some soft light; the backdrop under it is the theme's
     void Wallpaper() {
+        DrawWallpaperMark({W / 2, H / 2 - 40}, 173, 0.06f);   // first: the glows tint it like the rest
         SoftGlow({W / 2, H / 2 - 30}, 420, col::accent, 0.12f);
         SoftGlow({W / 2 + 220, H / 2 + 120}, 300, col::accent2, 0.08f);
         Rectangle scr = ScreenRect();
         DotGrid({scr.x, 0, scr.width, H - 54}, 28, Alpha(col::border, 0.35f));
-        const float fs = 240;
-        TextCenter("{*}", {0, H / 2 - fs / 2 - 40, W, fs}, fs, Alpha(col::heading, 0.05f), F_MONOBOLD);
         TextCenter("SegFault OS", {0, H / 2 + 92, W, 30}, 22, Alpha(col::heading, 0.09f), F_DISPLAY);
     }
 
@@ -349,7 +350,7 @@ private:
     }
 
     void StartMenu(Rectangle start, bool input) {
-        const float h = 572;
+        const float h = 628;
         Rectangle m = {W / 2 - 180, H - 54 - 12 - h, 360, h};
         Shadow(m, 14, 2);
         RoundRect(m, 14, Mix(col::panel, col::bg2, 0.3f));
@@ -399,6 +400,27 @@ private:
         Text("covers the Windows taskbar  -  F11", fs.x + 44, fs.y + 27, 12, col::faint, F_MEDIUM);
         if (fsh && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) { ToggleBorderlessWindowed(); app.fullscreen = !app.fullscreen; SaveAppSettings(); }
 
+        // system sounds on or off
+        Rectangle sr = {m.x + 12, m.y + 472, m.width - 24, 50};
+        bool srh = input && MouseIn(sr);
+        if (srh) { RoundRect(sr, 10, Alpha(col::heading, 0.06f)); WantHand(); }
+        Rectangle sb = {sr.x + 12, sr.y + 15, 20, 20};
+        bool soundOn = snd::SystemSounds();
+        RoundRect(sb, 5, soundOn ? col::accent : Alpha(col::panelHi, 1));
+        RoundRectLines(sb, 5, 1, soundOn ? col::accent : col::border);
+        if (soundOn) {
+            Color on = OnColor(col::accent);
+            DrawLineEx({sb.x + 5, sb.y + 10}, {sb.x + 9, sb.y + 14}, 2, on);
+            DrawLineEx({sb.x + 9, sb.y + 14}, {sb.x + 15, sb.y + 6}, 2, on);
+        }
+        Text("System sounds", sr.x + 44, sr.y + 8, 14, col::text, F_MEDIUM);
+        Text("start-up, sign in, opening apps, shut down", sr.x + 44, sr.y + 27, 12, col::faint, F_MEDIUM);
+        if (srh && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+            snd::SetSystemSounds(!soundOn);
+            SaveAppSettings();
+            snd::Play(snd::CLICK);
+        }
+
         // footer: shut down
         DrawRectangleRec({m.x, m.y + m.height - 62, m.width, 1}, col::border);
         Rectangle off = {m.x + m.width - 140, m.y + m.height - 50, 128, 38};
@@ -408,7 +430,7 @@ private:
         DrawRing(c, 6.5f, 8.5f, -50, 230, 24, fh ? col::danger : col::text);   // power symbol: the gap at the top (0 degrees is to the right)
         DrawLineEx({c.x, c.y - 10}, {c.x, c.y - 2}, 2, fh ? col::danger : col::text);
         Text("Shut down", off.x + 36, off.y + 11, 14, fh ? col::danger : col::text, F_BOLD);
-        if (fh && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) { shutting = t; menu = false; }
+        if (fh && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) { shutting = t; menu = false; snd::Play(snd::SHUTDOWN); }
         // who is signed in, and signing out (back to the sign-in screen)
         if (!app.user.empty()) {
             avatar::Draw({m.x + 18, m.y + m.height - 47, 26, 26}, app.user, app.progress.avatarColour);

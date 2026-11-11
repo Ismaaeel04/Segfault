@@ -120,3 +120,6 @@ add_test(NAME json COMMAND json_tests)
 
 add_executable(ai_stream_tests tests/test_ai_stream.cpp)
 add_test(NAME ai_stream COMMAND ai_stream_tests)
+
+add_executable(midi_tests tests/test_midi.cpp)
+add_test(NAME midi COMMAND midi_tests)

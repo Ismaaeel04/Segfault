@@ -14,6 +14,7 @@
 #include "avatar.h"
 #include "cursor.h"
 #include "focus.h"
+#include "sound.h"
 #include "runner.h"
 #include "theme.h"
 #include "ui.h"
@@ -374,6 +375,8 @@ int main(int argc, char** argv) {
     ApplyTheme(0);
     if (argc >= 2 && std::strcmp(argv[1], "--selftest") == 0) return SelfTest(argc >= 3 && std::strcmp(argv[2], "quick") == 0);
     // --ai-test "question": asks SegFault AI with the saved key and prints the answer (checks the connection)
+    // --render-sounds <dir>: the music and the system sounds as .wav files, to listen to
+    if (argc >= 3 && std::strcmp(argv[1], "--render-sounds") == 0) return snd::RenderToFiles(FindResourceDir() + "/music", argv[2]) ? 0 : 1;
     if (argc >= 3 && std::strcmp(argv[1], "--ai-test") == 0) {
         app.dataDir = GetApplicationDirectory();
         printf("provider: %s, key saved: %s\n", ai::ProviderName(ai::ActiveProvider()), ai::HasKey() ? "yes" : "no");
@@ -455,7 +458,8 @@ int main(int argc, char** argv) {
     runner::StartDetection(app.resourceDir);
     if (shotFile && argc >= 7) ApplyTheme(ThemeIndex(argv[6]));
     CreateScenes();
-    if (!shotFile) SetLogoIcon();
+    if (!shotFile) { SetLogoIcon(); snd::Init(app.resourceDir + "/music"); }
+    else if (std::getenv("SEGFAULT_SOUND_TEST")) snd::Init(app.resourceDir + "/music");   // the sound code, silent, in a test
 
     if (shotFile) app.Go((SceneId)shotScene, shotParam);
     else app.Go(SceneId::Intro, app.user.empty() ? "login" : "home");
@@ -527,6 +531,7 @@ int main(int argc, char** argv) {
         ui::BeginFrame();
         Backdrop((float)GetTime());
         focus::Update();
+        snd::Update();
         WarmFonts();   // one font size per frame until the usual ones are ready
         const bool alertWasOpen = focus::AlertOpen();
         const bool pickerWasOpen = app.themePickerOpen || alertWasOpen;
@@ -600,6 +605,7 @@ int main(int argc, char** argv) {
             printf("bench: %.2f ms/frame over %d frames, worst %.1f ms, %d frames over 16.7 ms, startup %.2f s, window %dx%d, canvas %dx%d\n",
                    (GetTime() - benchStart) * 1000.0 / (frame - 30), frame - 30, benchWorst, benchSlow, benchStart,
                    GetScreenWidth(), GetScreenHeight(), canvas.texture.width, canvas.texture.height), fflush(stdout);
+        if (shotFile && frame == shotFrame && std::getenv("SEGFAULT_SOUND_TEST")) printf("sound: %s\n", snd::State().c_str()), fflush(stdout);
         if (shotFile && frame == shotFrame) {
             Image img = LoadImageFromTexture(canvas.texture);
             ImageFlipVertical(&img);
