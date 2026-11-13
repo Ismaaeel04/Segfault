@@ -7,11 +7,20 @@
 #include "content/content.h"
 #include "workspace.h"
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 
 using namespace ui;
 
 namespace {
+
+enum { BOX_PRACTICE_SEARCH = 7501 };
+enum StatusFilter { ST_ANY = -1, ST_SOLVED = 0, ST_ATTEMPTED = 1, ST_UNSOLVED = 2 };
+
+std::string Lower(std::string s) {
+    for (char& c : s) c = (char)std::tolower((unsigned char)c);
+    return s;
+}
 
 class PracticeScene : public Scene {
 public:
@@ -37,7 +46,8 @@ public:
 private:
     Workspace ws;
     bool open = false;
-    int filterSection = -1, filterDiff = -1;
+    int filterSection = -1, filterDiff = -1, filterStatus = ST_ANY;
+    std::string search, prevSearch;
     Scroll listScroll;
 
     bool Chip(float& x, float y, const std::string& label, bool active, Color c) {
@@ -58,9 +68,28 @@ private:
             bool s = app.progress.Has("solved:" + p.id);
             solved += s; perDiff[p.difficulty]++; perDiffSolved[p.difficulty] += s;
         }
-        // header
-        Text("Practice", 32, 86, 30, col::heading, F_DISPLAY);
-        Text("Write real C / C++ code and run it against tests.", 34, 126, 15.5f, col::dim, F_MEDIUM);
+        bool ctrl = IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL) || IsKeyDown(KEY_LEFT_SUPER) || IsKeyDown(KEY_RIGHT_SUPER);
+        if (InputEnabled() && ctrl && IsKeyPressed(KEY_F)) FocusWidget(BOX_PRACTICE_SEARCH);
+
+        // header + search bar
+        Text("Practice", 32, 78, 30, col::heading, F_DISPLAY);
+        Text("Write real C / C++ code and run it against tests.", 34, 114, 15.5f, col::dim, F_MEDIUM);
+        Rectangle sb = {32, 144, 340, 34};
+        TextBox(sb, search, BOX_PRACTICE_SEARCH, 48, false, "Search by title or topic... (Ctrl+F)");
+        if (!search.empty()) {
+            Rectangle clr = {sb.x + sb.width - 30, sb.y + 5, 24, 24};
+            bool ch = InputEnabled() && MouseIn(clr);
+            if (ch) { RoundRect(clr, 6, col::panelHi); WantHand(); }
+            Vector2 m = {clr.x + 12, clr.y + 12};
+            DrawLineEx({m.x - 4, m.y - 4}, {m.x + 4, m.y + 4}, 1.8f, ch ? col::heading : col::dim);
+            DrawLineEx({m.x - 4, m.y + 4}, {m.x + 4, m.y - 4}, 1.8f, ch ? col::heading : col::dim);
+            if (ch && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) search.clear();
+        }
+        if (search != prevSearch) { prevSearch = search; listScroll.Reset(); }
+        // free code, outside the problems + compiler selector
+        if (Button({384, 144, 154, 34}, "SegFault Editor", BTN_DEFAULT, true, 13.5f))
+            app.Open(SceneId::Editor, "", "");
+        CompilerChip({550, 144, 310, 34});
 
         // stats card
         Rectangle st = {876, 80, 380, 98};
@@ -80,21 +109,49 @@ private:
 
         // filters
         float x = 32, y = 192;
-        if (Chip(x, y, "All topics", filterSection < 0, col::accent)) filterSection = -1;
+        if (Chip(x, y, "All topics", filterSection < 0, col::accent)) { filterSection = -1; listScroll.Reset(); }
         for (int s = 0; s < S_COUNT; s++) {
             if (x + Measure(SectionName(s), 14, F_BOLD).x + 28 > 1256) { x = 32; y += 42; }
-            if (Chip(x, y, SectionName(s), filterSection == s, SectionColor(s))) filterSection = filterSection == s ? -1 : s;
+            if (Chip(x, y, SectionName(s), filterSection == s, SectionColor(s))) {
+                filterSection = filterSection == s ? -1 : s;
+                listScroll.Reset();
+            }
         }
         y += 46;
         float dx = 32;
         Text("Difficulty", dx, y + 8, 14, col::dim, F_BOLD);
         dx += 82;
-        if (Chip(dx, y, "Any", filterDiff < 0, col::accent)) filterDiff = -1;
-        for (int d = 0; d < 3; d++) if (Chip(dx, y, DifficultyName(d), filterDiff == d, DifficultyColor(d))) filterDiff = filterDiff == d ? -1 : d;
-        CompilerChip({1256 - 300, y, 300, 34});
-        // free code, outside the problems
-        if (Button({1256 - 300 - 12 - 154, y, 154, 34}, "SegFault Editor", BTN_DEFAULT, true, 13.5f))
-            app.Open(SceneId::Editor, "", "");
+        if (Chip(dx, y, "Any", filterDiff < 0, col::accent)) { filterDiff = -1; listScroll.Reset(); }
+        for (int d = 0; d < 3; d++)
+            if (Chip(dx, y, DifficultyName(d), filterDiff == d, DifficultyColor(d))) {
+                filterDiff = filterDiff == d ? -1 : d;
+                listScroll.Reset();
+            }
+
+        dx += 16;
+        Text("Status", dx, y + 8, 14, col::dim, F_BOLD);
+        dx += 58;
+        struct StOpt { int id; const char* label; Color col; };
+        const StOpt stOpts[4] = {
+            {ST_ANY, "Any", col::accent},
+            {ST_SOLVED, "Solved", col::success},
+            {ST_ATTEMPTED, "Attempted", col::warn},
+            {ST_UNSOLVED, "Unsolved", col::accent2}};
+        for (const auto& opt : stOpts) {
+            if (Chip(dx, y, opt.label, filterStatus == opt.id, opt.col)) {
+                filterStatus = (filterStatus == opt.id) ? ST_ANY : opt.id;
+                listScroll.Reset();
+            }
+        }
+        bool filtered = filterSection >= 0 || filterDiff >= 0 || filterStatus != ST_ANY || !search.empty();
+        if (filtered && Chip(dx, y, "Reset", false, col::danger)) {
+            filterSection = -1;
+            filterDiff = -1;
+            filterStatus = ST_ANY;
+            search.clear();
+            prevSearch.clear();
+            listScroll.Reset();
+        }
 
         // table
         Rectangle tbl = {24, y + 48, 1232, 784 - (y + 48)};
@@ -109,10 +166,25 @@ private:
         Text("STATUS", colStatus, hy, 13, col::faint, F_BOLD);
         DrawRectangleRec({tbl.x + 12, tbl.y + 40, tbl.width - 24, 1}, col::border);
         Rectangle view = {tbl.x + 8, tbl.y + 46, tbl.width - 16, tbl.height - 54};
+        std::string q = Lower(search);
+        while (!q.empty() && q.front() == ' ') q.erase(q.begin());
+        while (!q.empty() && q.back() == ' ') q.pop_back();
         std::vector<int> rows;
         for (int i = 0; i < (int)ps.size(); i++) {
             if (filterSection >= 0 && ps[i].section != filterSection) continue;
             if (filterDiff >= 0 && ps[i].difficulty != filterDiff) continue;
+            bool isSolved = app.progress.Has("solved:" + ps[i].id);
+            bool isTried = !isSolved && app.progress.Has("tried:" + ps[i].id);
+            if (filterStatus == ST_SOLVED && !isSolved) continue;
+            if (filterStatus == ST_ATTEMPTED && !isTried) continue;
+            if (filterStatus == ST_UNSOLVED && isSolved) continue;
+            if (!q.empty()) {
+                std::string num = std::to_string(i + 1);
+                if (Lower(ps[i].title).find(q) == std::string::npos &&
+                    Lower(ps[i].id).find(q) == std::string::npos &&
+                    Lower(SectionName(ps[i].section)).find(q) == std::string::npos &&
+                    num != q) continue;
+            }
             rows.push_back(i);
         }
         const float rh = 48;
