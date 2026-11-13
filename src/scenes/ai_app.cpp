@@ -14,7 +14,7 @@ class AiScene : public Scene {
 public:
     const char* Title() const override { return "SegFault AI"; }
     ai::Screen AiInfo() const override { ai::Screen s; s.label = "SegFault AI"; return s; }
-    void Enter(const std::string&) override { app.aiOpen = false; FocusWidget(9102); }
+    void Enter(const std::string&) override { app.aiOpen = false; FocusWidget(ai::HasKey() ? 9102 : 9103); }
     void Frame(float) override { AiFullScreen({W / 2 - 430, 80, 860, H - 96}); }
 };
 

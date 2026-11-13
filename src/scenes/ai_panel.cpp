@@ -18,6 +18,10 @@ namespace {
 
 float gSlide = 0;          // 0 closed .. 1 open
 std::string gInput;
+std::string gKeyInput;
+std::string gKeyErr;
+bool gKeyShow = false;
+bool gKeySetupOpen = false;
 Scroll gScroll;
 float gLastContentH = 0;
 size_t gLastTextLen = 0;
@@ -156,16 +160,122 @@ static void Contents(Rectangle P, const ai::Screen& screen, bool input, bool clo
         DrawLineEx({cc.x + 5, cc.y - 5}, {cc.x - 5, cc.y + 5}, 2, col::text);
         right -= 38;
     }
-    if (!ai::Turns().empty() && Button({right - 58, P.y + 14, 58, 32}, "New", BTN_GHOST, input, 12.5f)) {
+    if (ai::HasKey()) {
+        std::string keyLabel = gKeySetupOpen ? "Done" : std::string(ai::ProviderName(ai::ActiveProvider())) + " key";
+        float kw = std::max(54.0f, Measure(keyLabel, 12.5f, F_BOLD).x + 22);
+        if (Button({right - kw, P.y + 14, kw, 32}, keyLabel, gKeySetupOpen ? BTN_PRIMARY : BTN_GHOST, input, 12.5f)) {
+            gKeySetupOpen = !gKeySetupOpen;
+            gKeyErr.clear();
+            if (gKeySetupOpen) FocusWidget(9103);
+        }
+        right -= kw + 6;
+    }
+    if (!gKeySetupOpen && !ai::Turns().empty() && Button({right - 58, P.y + 14, 58, 32}, "New", BTN_GHOST, input, 12.5f)) {
         ai::NewChat();
         gScroll.Reset();
     }
     DrawRectangleRec({P.x + 1, P.y + 60, P.width - 2, 1}, col::border);
 
     const Rectangle body = {P.x + 18, P.y + 72, P.width - 36, P.height - 72};
-    if (!ai::HasKey()) {   // set up by hand: see the README
-        DrawAiLogo({body.x + body.width / 2 - 30, body.y + 60, 60, 60}, (float)GetTime(), 0);
-        TextCenter("SegFault AI isn't set up on this computer", {body.x, body.y + 140, body.width, 22}, 16, col::heading, F_BOLD);
+    if (!ai::HasKey() || gKeySetupOpen) {
+        float maxW = std::min(body.width, 460.0f);
+        Rectangle card = {body.x + (body.width - maxW) / 2, body.y + 18, maxW, 0};
+        float y = card.y;
+
+        DrawAiLogo({card.x + card.width / 2 - 28, y, 56, 56}, (float)GetTime(), ai::HasKey() ? 0.35f : 0.0f);
+        y += 68;
+        TextCenter(ai::HasKey() ? "SegFault AI Key Settings" : "Set up SegFault AI",
+                   {card.x, y, card.width, 22}, 17, col::heading, F_HEAVY);
+        y += 26;
+        TextCenter("Paste a Gemini (AIza... / AQ....) or Claude (sk-ant-...) API key.",
+                   {card.x, y, card.width, 18}, 13, col::dim, F_MEDIUM);
+        y += 28;
+
+        // Provider selector / status pills
+        float pillW = (card.width - 10) / 2;
+        for (int p = 0; p < 2; p++) {
+            ai::Provider prov = p == 0 ? ai::GEMINI : ai::CLAUDE;
+            bool active = ai::ActiveProvider() == prov;
+            bool has = ai::HasKey(prov);
+            Rectangle pr = {card.x + p * (pillW + 10), y, pillW, 44};
+            bool hover = input && MouseIn(pr);
+            RoundRect(pr, 9, active ? Alpha(col::accent, 0.18f) : (hover ? col::panelHi : col::panel));
+            RoundRectLines(pr, 9, active ? 1.5f : 1.0f, active ? col::accent : col::border);
+            std::string title = prov == ai::GEMINI ? "Gemini (Google)" : "Claude (Anthropic)";
+            std::string status = has ? (active ? "Active - key saved" : "Key saved - click to use")
+                                     : (prov == ai::GEMINI ? "Free tier available" : "Paid API key");
+            Text(title, pr.x + 12, pr.y + 6, 13, active ? col::heading : col::text, F_BOLD);
+            Text(status, pr.x + 12, pr.y + 24, 11.5f, has ? col::success : col::faint, F_MEDIUM);
+            if (hover) WantHand();
+            if (hover && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+                ai::UseProvider(prov);
+                gKeyErr.clear();
+            }
+        }
+        y += 58;
+
+        // API key input row + Paste + Show/Hide
+        Text("API key", card.x, y, 12.5f, col::dim, F_BOLD);
+        Rectangle showBtn = {card.x + card.width - 52, y - 3, 52, 22};
+        if (Button(showBtn, gKeyShow ? "Hide" : "Show", BTN_GHOST, input, 11.5f)) gKeyShow = !gKeyShow;
+        Rectangle pasteBtn = {showBtn.x - 60, y - 3, 54, 22};
+        if (Button(pasteBtn, "Paste", BTN_GHOST, input, 11.5f)) {
+            const char* clip = GetClipboardText();
+            if (clip && *clip) {
+                gKeyInput = clip;
+                while (!gKeyInput.empty() && (gKeyInput.back() == '\n' || gKeyInput.back() == '\r' || gKeyInput.back() == ' '))
+                    gKeyInput.pop_back();
+                gKeyErr.clear();
+            }
+        }
+        y += 22;
+
+        Rectangle keyBox = {card.x, y, card.width, 40};
+        bool enterSave = TextBox(keyBox, gKeyInput, 9103, 256, false, "AIza... or sk-ant-...", !gKeyShow);
+        y += 50;
+
+        auto saveNow = [&]() {
+            std::string err = ai::SaveKey(gKeyInput);
+            if (!err.empty()) {
+                gKeyErr = err;
+            } else {
+                gKeyInput.clear();
+                gKeyErr.clear();
+                gKeySetupOpen = false;
+                Toast(std::string(ai::ProviderName(ai::ActiveProvider())) + " key saved", col::success);
+                FocusWidget(9102);
+            }
+        };
+
+        bool hasActiveKey = ai::HasKey();
+        float saveW = hasActiveKey ? (card.width - 10) * 0.62f : card.width;
+        if ((Button({card.x, y, saveW, 40}, "Save key", BTN_PRIMARY, input && !gKeyInput.empty(), 14) || enterSave) && !gKeyInput.empty()) {
+            saveNow();
+        }
+        if (hasActiveKey) {
+            Rectangle remBtn = {card.x + saveW + 10, y, card.width - saveW - 10, 40};
+            if (Button(remBtn, "Remove key", BTN_DANGER, input && !ai::KeyFromEnvironment(), 13)) {
+                ai::RemoveKey();
+                gKeyErr.clear();
+                Toast("API key removed", col::warn);
+            }
+        }
+        y += 48;
+
+        if (!gKeyErr.empty()) {
+            y += RichText({card.x, y, card.width, 80}, gKeyErr, 12.5f, col::danger) + 6;
+        }
+
+        // Quick instructions box
+        Rectangle helpBox = {card.x, y + 4, card.width, 108};
+        RoundRect(helpBox, 9, Alpha(col::panel, 0.75f));
+        RoundRectLines(helpBox, 9, 1, Alpha(col::border, 0.6f));
+        RichText({helpBox.x + 12, helpBox.y + 10, helpBox.width - 24, helpBox.height - 16},
+                 "**Where to get a key:**\n"
+                 "- **Gemini (free):** create a key in Google AI Studio (`aistudio.google.com/apikey`).\n"
+                 "- **Claude:** create a key in Anthropic Console (`console.anthropic.com`).\n"
+                 "- Saved locally on this PC inside your SegFault data folder.",
+                 12.0f, col::dim);
         return;
     }
     // ---- the conversation
