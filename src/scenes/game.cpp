@@ -94,7 +94,7 @@ struct Rock { float x, y, vy, warn, warn0; int value; std::string label; float l
 
 struct Popup { std::string text; float x, y, age; Color col; };
 
-enum State { MENU, SETTINGS, STORY, CHAPTER, PLAY, QUIZ, TERMINAL, PAUSE, DEAD, VICTORY, CONFIRM_RESTART };
+enum State { MENU, NEW_GAME, SETTINGS, STORY, CHAPTER, PLAY, QUIZ, TERMINAL, PAUSE, DEAD, VICTORY, CONFIRM_RESTART };
 
 const float kLevelLen = 5200;
 
@@ -180,6 +180,7 @@ public:
         t += dt;
         switch (state) {
             case MENU: Menu(dt); break;
+            case NEW_GAME: Menu(dt); NewGameSetup(); break;
             case CONFIRM_RESTART: Menu(dt); ConfirmRestart(); break;
             case SETTINGS: SettingsScreen(); break;
             case STORY: Story(dt); break;
@@ -285,8 +286,8 @@ private:
 
     // ---------------------------------------------------- shared drawing --
     // A menu entry in the game's style; returns true when chosen.
-    bool Item(float cx, float y, const std::string& label, bool selected, bool enabled = true) {
-        float w = 360, h = 54;
+    bool Item(float cx, float y, const std::string& label, bool selected, bool enabled = true, float w = 360) {
+        float h = 54;
         Rectangle r = {cx - w / 2, y, w, h};
         bool hover = enabled && MouseIn(r);
         if (hover && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) { Fx(snd::FX_MENU_SELECT); return true; }
@@ -355,12 +356,45 @@ private:
             case 0: StartChapter(std::min(chaptersDone, kLandCount - 1)); break;   // the next land, or the last one
             case 1:
                 if (chaptersDone > 0) { state = CONFIRM_RESTART; break; }
-                StartStory(kIntro, 4, CHAPTER, 0);
+                state = NEW_GAME;
                 break;
             case 2: state = CONFIRM_RESTART; break;
             case 3: settingsBack = MENU; state = SETTINGS; rebinding = -1; break;
             case 4: Leave(); break;
             default: break;
+        }
+    }
+
+    void NewGameSetup() {
+        Shade(0.65f);
+        Rectangle box = {W / 2 - 300, H / 2 - 155, 600, 310};
+        DrawRectangleRounded(box, 0.10f, 12, Hex(0x1b1736));
+        DrawRectangleRoundedLinesEx(box, 0.10f, 12, 2, Hex(0x8b7bff));
+        TextCenter("New Game", {box.x, box.y + 24, box.width, 34}, 28, WHITE, F_HEAVY);
+        TextCenter("Choose your settings before entering the Kingdom of Memory.",
+                   {box.x, box.y + 62, box.width, 20}, 14.5f, Hex(0xb9b3d9), F_MEDIUM);
+
+        const float rx = box.x + 36, rw = box.width - 72, rh = 44;
+        const char* diff[3] = {"Easy  (7 hearts)", "Normal  (5 hearts)", "Hard  (3 hearts)"};
+        if (Cycle({rx, box.y + 104, rw, rh}, "Difficulty", diff[set.difficulty])) {
+            set.difficulty = (set.difficulty + 1) % 3;
+            Fx(snd::FX_MENU_MOVE);
+            Save();
+        }
+        if (Cycle({rx, box.y + 158, rw, rh}, "Question timer", set.questionTimer ? "On  (25 s)" : "Off")) {
+            set.questionTimer = !set.questionTimer;
+            Fx(snd::FX_MENU_MOVE);
+            Save();
+        }
+
+        bool start = Item(W / 2 - 135, box.y + 228, "Start Game", false, true, 240) || IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_KP_ENTER);
+        bool back = Item(W / 2 + 135, box.y + 228, "Cancel", false, true, 240) || IsKeyPressed(KEY_ESCAPE);
+        if (start) {
+            chaptersDone = 0;
+            Save();
+            StartStory(kIntro, 4, CHAPTER, 0);
+        } else if (back) {
+            state = MENU;
         }
     }
 
@@ -371,9 +405,9 @@ private:
         DrawRectangleRoundedLinesEx(box, 0.12f, 12, 2, Hex(0x8b7bff));
         TextCenter("Start again from the beginning?", {box.x, box.y + 34, box.width, 30}, 22, WHITE, F_BOLD);
         TextCenter("Your progress through the lands is lost.", {box.x, box.y + 74, box.width, 22}, 15, Hex(0xb9b3d9), F_MEDIUM);
-        bool yes = Item(W / 2 - 120, box.y + 130, "Yes, restart", false) || IsKeyPressed(KEY_Y);
-        bool no = Item(W / 2 + 120, box.y + 130, "Cancel", false) || IsKeyPressed(KEY_ESCAPE) || IsKeyPressed(KEY_N);
-        if (yes) { chaptersDone = 0; Save(); StartStory(kIntro, 4, CHAPTER, 0); }
+        bool yes = Item(W / 2 - 120, box.y + 130, "Yes, restart", false, true, 220) || IsKeyPressed(KEY_Y);
+        bool no = Item(W / 2 + 120, box.y + 130, "Cancel", false, true, 220) || IsKeyPressed(KEY_ESCAPE) || IsKeyPressed(KEY_N);
+        if (yes) state = NEW_GAME;
         else if (no) state = MENU;
     }
 
@@ -413,19 +447,14 @@ private:
             if (k == KEY_ESCAPE) rebinding = -1;
             else if (k > 0) { set.keys[rebinding] = k; rebinding = -1; Save(); }
         }
-        y += 10;
-        Text("GAME", x0, y, 13, Hex(0x8f88b8), F_BOLD);
+        y += 14;
+        Text("AUDIO", x0, y, 13, Hex(0x8f88b8), F_BOLD);
         y += 24;
-        const char* diff[3] = {"Easy  (7 hearts)", "Normal  (5 hearts)", "Hard  (3 hearts)"};
-        if (Cycle({x0, y, w, rh}, "Difficulty", diff[set.difficulty])) { set.difficulty = (set.difficulty + 1) % 3; Save(); }
-        y += step;
-        if (Cycle({x0, y, w, rh}, "Question timer", set.questionTimer ? "On  (25 s)" : "Off")) { set.questionTimer = !set.questionTimer; Save(); }
-        y += step;
         if (Slider({x0, y, w, rh}, "Music", set.music)) { snd::SetMusicVolume(set.music); Save(); }
         snd::SetMusicVolume(set.music);   // follows the bar while it is dragged
         y += step;
         if (Slider({x0, y, w, rh}, "Sound effects", set.volume)) { Save(); Fx(snd::FX_RIGHT); }
-        y += 60;
+        y += 64;
         if (Item(W / 2, y, "Back", false) || (rebinding < 0 && IsKeyPressed(KEY_ESCAPE))) { Save(); state = settingsBack; }
     }
 
