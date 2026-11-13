@@ -54,8 +54,8 @@ const char* kSystem =
     "- Keep answers short and concrete: a few sentences, and a small code snippet when it helps, in "
     "a fenced block with its language (```c or ```cpp). The answer is read in a narrow side panel: "
     "no tables, no big headings.\n"
-    "- Always reply in the language of the student's latest message: English if they write in English, "
-    "Spanish if they write in Spanish, even if earlier messages or the problem use another language.\n"
+    "- Always reply in English by default. Only switch to another language if the student clearly "
+    "writes their latest message in that language.\n"
     "- Write maths as plain text (sqrt(n), n^2, i <= n), never LaTeX or $...$: the panel can't show it.\n"
     "- For questions far from C, C++ or studying, answer briefly and bring them back to their work.";
 
@@ -434,18 +434,18 @@ void LoadDemo() {
         "so the write lands on address 0 and Windows stops the program (access violation).\n\n"
         "- Give `p` some memory first, or point it at a real variable.\n"
         "- Check what `malloc` returns before using it.\n\n"
-        "```c\nint *p = malloc(sizeof(int));\nif (p == NULL) return 1;\n*p = 42;\nfree(p);   // ¡libéralo! año, niño\n```\n\n"
+        "```c\nint *p = malloc(sizeof(int));\nif (p == NULL) return 1;\n*p = 42;\nfree(p);   // don't forget to free it!\n```\n\n"
         "Can you see which of the two fixes fits your exercise?";
     gEntries.push_back(a);
     Entry u2;
     u2.turn.user = true;
-    u2.turn.text = "y si uso new en vez de malloc?";
+    u2.turn.text = "What if I use new instead of malloc?";
     gEntries.push_back(u2);
-    Entry a2;   // accents, ñ, ¿ and a dash: checks the fonts have them
+    Entry a2;
     a2.turn.text =
-        "Sí, con `new` también funciona: `int *p = new int(42);` y al final `delete p;`.\n\n"
-        "¿Ves la diferencia? Nunca mezcles `malloc` con `delete` ni `new` con `free` — eso es comportamiento "
-        "indefinido, aunque a veces parezca que va bien. Año, niño, acción, pingüino.";
+        "Yes, `new` works cleanly in C++: `int *p = new int(42);` and `delete p;` when you're done.\n\n"
+        "Just make sure you never mix `malloc` with `delete` or `new` with `free` — that is undefined "
+        "behaviour, even if it seems to work at first.";
     gEntries.push_back(a2);
     Rebuild();
 }
