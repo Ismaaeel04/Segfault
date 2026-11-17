@@ -397,7 +397,11 @@ private:
             DrawLineEx({fb.x + 9, fb.y + 14}, {fb.x + 15, fb.y + 6}, 2, on);
         }
         Text("Full screen", fs.x + 44, fs.y + 8, 14, col::text, F_MEDIUM);
+#ifdef _WIN32
         Text("covers the Windows taskbar  -  F11", fs.x + 44, fs.y + 27, 12, col::faint, F_MEDIUM);
+#else
+        Text("fills the whole screen  -  F11", fs.x + 44, fs.y + 27, 12, col::faint, F_MEDIUM);
+#endif
         if (fsh && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) ToggleAppFullscreen();
 
         // system sounds on or off
