@@ -7,6 +7,7 @@
 //
 // Chapter 1: Stack Plains (Off-by-One Goblins, the Infinite Loop Serpent).
 // Chapter 2: Array Canyon (Out-of-Bounds Imps, the Matrix Golem).
+// Chapter 3: Pointer Peaks (NULL Ghosts, the Wild Pointer Wyvern).
 // Plus the title menu, settings, and the story between the lands.
 // ============================================================================
 #include "app/app.h"
@@ -83,7 +84,8 @@ struct Goblin {
     int hp = 3, maxHp = 3;
     float walk = 0, hurt = 0, dying = -1, touchCd = 0;
     float hy = 0, vy = 0, hopCd = 0.5f;   // imps: height above the ground, fall speed, time to the next hop
-    int index = 4;                         // imps: the out-of-bounds index they carry
+                                           // ghosts: hy their height, vy how solid (1) or NULL (0), hopCd time to the next change
+    int index = 4;                         // imps: the out-of-bounds index they carry; ghosts: 1 solid, 0 turning NULL
     bool alive = true;
 };
 
@@ -91,6 +93,9 @@ struct Ring { float x, vx; float life; };   // the Serpent's loop rings, the Gol
 
 // A block the Golem drops: first a mark where it will land, then it falls.
 struct Rock { float x, y, vy, warn, warn0; int value; std::string label; float landed; };
+
+// A bolt the Wyvern fires along its aim.
+struct Bolt { Vector2 p, v; };
 
 struct Popup { std::string text; float x, y, age; Color col; };
 
@@ -114,6 +119,7 @@ struct Land {
 const Land kLands[] = {
     {"Stack Plains", "Loops and numbers", "Infinite Loop Serpent", "the Serpent", "goblin", "goblins", "plains", "boss", S_NUMBERS, S_LOOPS, 0x3fd1c7},
     {"Array Canyon", "Arrays and 2D arrays", "Matrix Golem", "the Golem", "imp", "imps", "canyon", "golem", S_ARRAYS, S_GRID, 0xff9e4a},
+    {"Pointer Peaks", "Pointers and pointer arithmetic", "Wild Pointer Wyvern", "the Wyvern", "ghost", "ghosts", "peaks", "wyvern", S_POINTERS, S_PTRARITH, 0x9fd8ff},
 };
 const int kLandCount = (int)(sizeof(kLands) / sizeof(kLands[0]));
 
@@ -135,8 +141,13 @@ const Panel kAfterChapter1[] = {
 };
 const Panel kAfterChapter2[] = {
     {"The Matrix Golem falls apart, row by row, until only loose stones are left.", 6},
-    {"In its heart lies a second ribbon, and an address scratched into the stone. The Heap is close.", 1},
-    {"To be continued. Chapter 3 arrives in the next update.", 3},
+    {"In its heart lies a second ribbon, and an address scratched into the stone. It points north, up into the Pointer Peaks.", 1},
+    {"Up there nothing is what it seems: ghosts that point at nothing, and a wyvern born from a pointer that nobody ever set.", 7},
+};
+const Panel kAfterChapter3[] = {
+    {"The Wild Pointer Wyvern crashes into the snow. Its arrow of a tail finally points at nothing at all.", 8},
+    {"A third ribbon lies frozen in the ice. Below the peaks the path falls into a forest where memory leaks away...", 1},
+    {"To be continued. Chapter 4 arrives in the next update.", 3},
 };
 
 // ================================================================= scene ===
@@ -153,23 +164,25 @@ public:
         t = 0;
         snd::SetMusicVolume(set.music);
         snd::PlayMusic("title");
-        for (const char* id : {"story", "plains", "boss", "canyon", "golem", "gameover"}) snd::Preload(id);   // ready before they are needed
-        // --shot hooks, to check each screen from the command line ("play2": the same in chapter 2)
+        for (const char* id : {"story", "plains", "boss", "canyon", "golem", "peaks", "wyvern", "gameover"}) snd::Preload(id);   // ready before they are needed
+        // --shot hooks, to check each screen from the command line ("play2", "boss3": the same in chapter 2, 3)
         std::string p = param;
         land = 0;
-        if (!p.empty() && p.back() == '2') { land = 1; p.pop_back(); }
+        if (!p.empty() && p.back() >= '2' && p.back() <= '9') { land = std::min(p.back() - '1', kLandCount - 1); p.pop_back(); }
         if (p == "settings") state = SETTINGS;
         else if (p == "story" && land == 0) StartStory(kIntro, 4, CHAPTER), panelIdx = 2, panelT = 100;
-        else if (p == "story") StartStory(kAfterChapter1, 3, CHAPTER, 1), panelIdx = 2, panelT = 100;
+        else if (p == "story" && land == 1) StartStory(kAfterChapter1, 3, CHAPTER, 1), panelIdx = 2, panelT = 100;
+        else if (p == "story") StartStory(kAfterChapter2, 3, CHAPTER, 2), panelIdx = 2, panelT = 100;
+        else if (p == "ending") StartStory(kAfterChapter3, 3, MENU), panelIdx = 0, panelT = 100;
         else if (p == "chapter") StartChapter(land), chapterT = 0.5f;
         else if (p == "play" || p == "quiz" || p == "boss" || p == "terminal") {
             ResetLevel();
             state = PLAY;
             snd::PlayMusic(kLands[land].music);
             if (p == "quiz") { hero.x = 900; AskQuestion(0, false); }
-            if (p == "play" && land == 1) { hero.x = 900; for (int i = 0; i < 40; i++) Update(1 / 60.0f); }   // the imps hopping
+            if (p == "play" && land >= 1) { hero.x = 900; for (int i = 0; i < 40; i++) Update(1 / 60.0f); }   // the imps hopping, the ghosts
             if (p == "boss" || p == "terminal") {
-                goblins.clear(); hero.x = kLevelLen - 600; Update(0.016f); bossT = 2; ringCd = 0; golemCd = 0; Update(0.5f);
+                goblins.clear(); hero.x = kLevelLen - 600; Update(0.016f); bossT = 2; ringCd = 0; golemCd = 0; wyCd = 0; Update(0.5f);
                 for (int i = 0; i < 45; i++) Update(1 / 60.0f);   // the Golem's first attack under way
             }
             if (p == "terminal") state = TERMINAL;
@@ -215,6 +228,7 @@ private:
     std::vector<Goblin> goblins;
     std::vector<Ring> rings;
     std::vector<Rock> rocks;
+    std::vector<Bolt> bolts;
     std::vector<Popup> popups;
     float cam = 0, shake = 0;
     bool arena = false, bossAwake = false;
@@ -223,6 +237,10 @@ private:
     // the Golem: its arms (0 down .. 1 raised), what it is winding up (0 nothing, 1 a rain of blocks, 2 a slam)
     float golemPose = 0, golemCd = 2, golemT = 0;
     int golemAct = 0;
+    // the Wyvern: where it flies (bossX, bossY), what it is doing (0 hovering, 1 aiming, 2 diving, 3 flying back)
+    float bossY = 250, wyCd = 2, wyT = 0, wyTilt = 0, wyDiveX0 = 0, wyDiveY0 = 0;
+    int wyAct = 0, wyFace = -1;
+    Vector2 aimTo = {0, 0};
     // quiz
     std::vector<int> questionPool;
     size_t poolNext = 0;
@@ -308,7 +326,9 @@ private:
 
     void TitleBackdrop() {
         float drift = (0.5f - 0.5f * std::cos(t * 0.05f)) * 2600;   // drifts back and forth
-        if (std::min(chaptersDone, kLandCount - 1) == 1) fp::DrawArrayCanyon(drift, t);
+        int far = std::min(chaptersDone, kLandCount - 1);   // the land you would continue in
+        if (far == 2) fp::DrawPointerPeaks(drift, t);
+        else if (far == 1) fp::DrawArrayCanyon(drift, t);
         else fp::DrawStackPlains(drift, t);
         // the hero, standing at the edge of the plains
         fp::DrawHero({ScreenRect().x + 220, kGround}, 1.3f, 1, 0, -1, t, false);
@@ -520,6 +540,12 @@ private:
                 fp::DrawImp({mid.x - 110, mid.y - 30 - std::fabs(std::sin(t * 3 + 1.5f)) * 40}, 1.2f, 1, std::fabs(std::sin(t * 3 + 1.5f)), 0, 1, -1, t);
                 break;
             case 6: fp::DrawGolem({mid.x, mid.y - 24}, 0.9f, t, 0, 0, 1, 0.9f); break;
+            case 7:   // the peaks: the Wyvern and two ghosts
+                fp::DrawWyvern({mid.x + 150, mid.y - 230 + std::sin(t * 1.5f) * 12}, 1.0f, -1, 0, std::fmod(t * 1.4f, 1.0f), 0, 1, t);
+                fp::DrawGhost({mid.x - 250, mid.y - 70}, 1.2f, 1, 0, 1, 1, t);
+                fp::DrawGhost({mid.x - 110, mid.y - 50}, 1.2f, 1, 0, 1, 0.5f + 0.5f * std::sin(t * 1.3f), t + 1);
+                break;
+            case 8: fp::DrawWyvern({mid.x, mid.y - 110}, 1.0f, -1, 70, 0.25f, 0, 0.75f, t); break;   // fallen in the snow
         }
         EndClip();
         DrawRectangleRoundedLinesEx(art, 0.06f, 10, 2, Hex(0x4b4475));
@@ -588,8 +614,15 @@ private:
             g.hopCd = Rand01();
             goblins.push_back(g);
         }
+        if (land == 2)   // ghosts: solid to start with, turning NULL at different times
+            for (Goblin& g : goblins) { g.index = 1; g.vy = 1; g.hy = 40; g.hopCd = 1.5f + Rand01() * 2.5f; }
         rings.clear();
         rocks.clear();
+        bolts.clear();
+        wyAct = 0;
+        wyCd = 2.5f;
+        wyTilt = 0;
+        bossY = 250;
         golemPose = 0;
         golemCd = 2.5f;
         golemAct = 0;
@@ -668,6 +701,7 @@ private:
                 Goblin& g = goblins[i];
                 float dx = (g.x - hero.x) * hero.face;
                 if (!g.alive || g.dying >= 0 || dx < -20 || dx > 130 || std::fabs((hero.y - kGround) + g.hy) > 70) continue;
+                if (land == 2 && g.vy < 0.5f) continue;   // NULL: the sword goes straight through
                 Strike((int)i);
                 break;
             }
@@ -680,6 +714,28 @@ private:
             g.touchCd = std::max(0.0f, g.touchCd - dt);
             if (g.dying >= 0) { g.dying += dt; g.hy = std::max(0.0f, g.hy - 300 * dt); if (g.dying > 0.6f) g.alive = false; continue; }
             float dx = hero.x - g.x;
+            if (land == 2) {   // a NULL ghost: it floats at you, and every few seconds turns NULL
+                g.hopCd -= dt;
+                if (g.hopCd <= 0) {
+                    if (g.index == 1) { g.index = 0; g.hopCd = 1.4f; if (std::fabs(dx) < 700) Fx(snd::FX_GHOST, 0.5f); }
+                    else { g.index = 1; g.hopCd = 2.2f + Rand01() * 1.8f; }
+                }
+                g.vy += ((float)g.index - g.vy) * std::min(1.0f, dt * 6);   // fades in and out
+                g.hy = 40 + 22 * std::sin(t * 1.7f + g.home * 0.01f);
+                bool chase = std::fabs(dx) < 520;
+                if (chase) { g.face = dx > 0 ? 1 : -1; if (std::fabs(dx) > 30) g.x += g.face * 115 * dt; }
+                else {
+                    if (g.x > g.home + 120) g.face = -1;
+                    if (g.x < g.home - 120) g.face = 1;
+                    g.x += g.face * 55 * dt;
+                }
+                if (g.vy > 0.5f && std::fabs(dx) < 46 && std::fabs((hero.y - kGround) + g.hy) < 80 && g.touchCd <= 0 && hero.hurt <= 0) {
+                    g.touchCd = 1.0f;
+                    HurtHero(dx > 0 ? 1 : -1);
+                    if (state != PLAY) return;
+                }
+                continue;
+            }
             if (land == 1) {   // an imp: it hops at you
                 bool chase = std::fabs(dx) < 520;
                 if (g.hy > 0 || g.vy < 0) {   // in the air
@@ -729,15 +785,18 @@ private:
             arena = true;
             arenaCam = kLevelLen - vw - L;   // the last screen of the level
             termX = arenaCam + L + 150;
-            bossX = arenaCam + L + vw * (land == 0 ? 0.68f : 0.72f);
+            bossX = arenaCam + L + vw * (land == 0 ? 0.68f : land == 1 ? 0.72f : 0.80f);
+            bossY = 220;
+            wyCd = 2.0f;
+            wyAct = 0;
             bossT = 0;
             ringCd = 2.5f;
             golemCd = 2.2f;
             termCd = 0;
-            Fx(land == 0 ? snd::FX_ROAR : snd::FX_GOLEM_WAKE);
+            Fx(land == 0 ? snd::FX_ROAR : land == 1 ? snd::FX_GOLEM_WAKE : snd::FX_SCREECH);
             snd::PlayMusic(kLands[land].bossMusic);
             shake = 0.6f;
-            Pop(std::string("The ") + kLands[land].boss + " awakens!", hero.x, hero.y - 220, land == 0 ? Hex(0x0f7f73) : Hex(0xa0441c));
+            Pop(std::string("The ") + kLands[land].boss + " awakens!", hero.x, hero.y - 220, land == 0 ? Hex(0x0f7f73) : land == 1 ? Hex(0xa0441c) : Hex(0x2a5aa0));
             bossAwake = true;
         }
         if (bossAwake && bossDying < 0) {
@@ -758,7 +817,8 @@ private:
                 Vector2 bc = BossCenter();
                 float ddx = hero.x - bc.x, ddy = (hero.y - 70) - bc.y;
                 if (ddx * ddx + ddy * ddy < 170.0f * 170.0f) HurtHero(ddx > 0 ? 1 : -1);
-            } else UpdateGolem(dt, L, vw);
+            } else if (land == 1) UpdateGolem(dt, L, vw);
+            else UpdateWyvern(dt, L, vw);
             if (state != PLAY) return;
             termCd = std::max(0.0f, termCd - dt);
             bool near = std::fabs(hero.x - termX) < 90;
@@ -782,6 +842,15 @@ private:
             }
         }
         rocks.erase(std::remove_if(rocks.begin(), rocks.end(), [](const Rock& r) { return r.landed > 0.5f; }), rocks.end());
+        // the Wyvern's bolts
+        for (Bolt& b : bolts) {
+            b.p.x += b.v.x * dt;
+            b.p.y += b.v.y * dt;
+            float bx = b.p.x - hero.x, by = b.p.y - (hero.y - 70);
+            if (bx * bx + by * by < 46.0f * 46.0f) { b.p.y = 99999; HurtHero(b.v.x > 0 ? 1 : -1); if (state != PLAY) return; }
+        }
+        bolts.erase(std::remove_if(bolts.begin(), bolts.end(), [&](const Bolt& b) {
+            return b.p.y > kGround + 10 || b.p.x < arenaCam + L - 120 || b.p.x > arenaCam + L + vw + 120 || b.p.y < -120; }), bolts.end());
         for (Ring& r : rings) {
             r.x += r.vx * dt;
             r.life -= dt;
@@ -800,6 +869,61 @@ private:
     }
 
     Vector2 BossCenter() const { return {bossX, 330 + std::sin(bossT * 1.3f) * 30}; }
+
+    // Where the Wyvern's mouth is (bolts come out of it).
+    Vector2 WyvernMouth() const { return {bossX + wyFace * 150.0f, bossY - 68}; }
+
+    // The Wild Pointer Wyvern: it hovers over the right of the arena and either
+    // aims at you (a red line follows you, locks, then a bolt flies along it:
+    // move!) or dives across the arena close to the ground (jump!).
+    void UpdateWyvern(float dt, float L, float vw) {
+        const float homeX = arenaCam + L + vw * 0.74f + std::sin(bossT * 0.6f) * vw * 0.10f;
+        const float homeY = 275 + std::sin(bossT * 1.4f) * 30;   // low enough that its label stays clear of the HUD
+        wyT += dt;
+        if (wyAct == 0 || wyAct == 1) {   // hovering (also while aiming)
+            float k = std::min(1.0f, dt * 2.5f);
+            bossX += (homeX - bossX) * k;
+            bossY += (homeY - bossY) * k;
+            wyFace = hero.x > bossX ? 1 : -1;
+            wyTilt *= 1 - std::min(1.0f, dt * 4);
+        }
+        if (wyAct == 0) {
+            wyCd -= dt;
+            if (wyCd <= 0) { wyAct = Rand01() < 0.55f ? 1 : 2; wyT = 0; if (wyAct == 2) { wyDiveX0 = bossX; wyDiveY0 = bossY; Fx(snd::FX_DIVE, 0.8f); } }
+        } else if (wyAct == 1) {   // aiming: tracks you for 0.9 s, locks for a moment, fires
+            if (wyT < 0.9f) aimTo = {hero.x, hero.y - 70};
+            if (wyT >= 0.9f && wyT - dt < 0.9f) Fx(snd::FX_AIM, 0.7f);
+            if (wyT >= 1.25f) {
+                Vector2 m = WyvernMouth(), d = {aimTo.x - m.x, aimTo.y - m.y};
+                float l = std::sqrt(d.x * d.x + d.y * d.y) + 1e-4f;
+                bolts.push_back({m, {d.x / l * 1100, d.y / l * 1100}});
+                Fx(snd::FX_BOLT);
+                wyAct = 0;
+                wyCd = 1.7f + Rand01() * 1.0f;
+            }
+        } else if (wyAct == 2) {   // the dive: up a little, then a long swoop to the left, low over the ground
+            const float wind = 0.45f, len = 1.15f;
+            wyFace = -1;
+            if (wyT < wind) { bossY = wyDiveY0 - 50 * (wyT / wind); wyTilt = -15 * (wyT / wind); }
+            else {
+                float u = std::min(1.0f, (wyT - wind) / len);
+                float x1 = arenaCam + L + 140, y0 = wyDiveY0 - 50, low = kGround - 75;
+                bossX = wyDiveX0 + (x1 - wyDiveX0) * u;
+                bossY = y0 + (low - y0) * std::sin(u * PI);   // down to just over your head, and up again
+                wyTilt = 28 * std::cos(u * PI);   // nose down, then up
+                float ddx = hero.x - bossX, ddy = (hero.y - 70) - bossY;
+                if (std::fabs(ddx) < 80 && std::fabs(ddy) < 90) HurtHero(ddx > 0 ? 1 : -1);
+                if (u >= 1) { wyAct = 3; wyT = 0; }
+            }
+        } else {   // flying back to its place, high up
+            float k = std::min(1.0f, dt * 2.2f);
+            bossX += (homeX - bossX) * k;
+            bossY += (homeY - 40 - bossY) * k;
+            wyFace = 1;
+            wyTilt = -10;
+            if (std::fabs(bossX - homeX) < 40) { wyAct = 0; wyCd = 1.6f + Rand01() * 1.0f; }
+        }
+    }
 
     // The Matrix Golem: it plods to and fro, and every few seconds raises its
     // arms, either to drop blocks where you stand (move!) or to slam the ground
@@ -1019,8 +1143,9 @@ private:
         TextCenter(TextFormat("CHAPTER %d CLEARED", land + 1), {0, 300, W, 60}, 52, Fade(Hex(0x48e5a0), Clamp01(deadT)), F_HEAVY);
         TextCenter(std::string("The ") + kLands[land].boss + " is defeated.", {0, 370, W, 26}, 19, Fade(Hex(0xd8d3f5), Clamp01(deadT)), F_MEDIUM);
         if (deadT > 1.2f && (IsKeyPressed(KEY_ENTER) || IsMouseButtonPressed(MOUSE_BUTTON_LEFT) || deadT > 4)) {
-            if (land == 0) StartStory(kAfterChapter1, 3, CHAPTER, 1);   // on to the Array Canyon
-            else StartStory(kAfterChapter2, 3, MENU);
+            if (land == 0) StartStory(kAfterChapter1, 3, CHAPTER, 1);        // on to the Array Canyon
+            else if (land == 1) StartStory(kAfterChapter2, 3, CHAPTER, 2);   // on to the Pointer Peaks
+            else StartStory(kAfterChapter3, 3, MENU);
         }
     }
 
@@ -1063,7 +1188,8 @@ private:
         float sx = shake > 0 ? std::sin(t * 90) * shake * 10 : 0;
         float c = cam - sx;
         if (land == 0) fp::DrawStackPlains(c, t);
-        else fp::DrawArrayCanyon(c, t);
+        else if (land == 1) fp::DrawArrayCanyon(c, t);
+        else fp::DrawPointerPeaks(c, t);
         auto X = [&](float wx) { return wx - c; };
         // signposts along the way: addresses on the plains, indices in the canyon
         int post = 0;
@@ -1072,7 +1198,7 @@ private:
             if (x < scr.x - 100 || x > scr.x + scr.width + 100) continue;
             DrawRectangle((int)x - 4, (int)kGround - 90, 8, 90, Hex(0x7a4a2a));
             DrawRectangleRounded({x - 60, kGround - 120, 120, 40}, 0.2f, 6, Hex(0xe8d3a8));
-            const char* label = land == 0 ? TextFormat("0x%04X", (int)wx) : TextFormat("arr[%d]", post);
+            const char* label = land == 0 ? TextFormat("0x%04X", (int)wx) : land == 1 ? TextFormat("arr[%d]", post) : TextFormat("p + %d", post);
             TextCenter(label, {x - 60, kGround - 112, 120, 24}, 16, Hex(0x5a3a1a), F_MONOBOLD);
         }
         // the arena: the terminal and the boss
@@ -1092,6 +1218,20 @@ private:
             float alpha = bossDying >= 0 ? 1 - Clamp01((bossDying - 1.4f) / 0.9f) : 1;
             fp::DrawGolem({X(bossX), kGround}, 1.0f, t, golemPose, bossHurt, alpha, crumble);
         }
+        if (bossAwake && land == 2) {   // when beaten it falls out of the sky, then fades
+            float y = bossY, tilt = wyTilt, alpha = 1;
+            if (bossDying >= 0) {
+                y = std::min(kGround - 70, bossY + bossDying * bossDying * 260);
+                tilt = std::min(70.0f, bossDying * 90);
+                alpha = 1 - Clamp01((bossDying - 1.4f) / 0.9f);
+            }
+            float wing = std::fmod(t * (wyAct == 2 ? 2.6f : 1.5f), 1.0f);
+            fp::DrawWyvern({X(bossX), y}, 1.0f, wyFace, tilt, bossDying >= 0 ? 0.25f : wing, bossHurt, alpha, t);
+        }
+        for (const Bolt& b : bolts) {
+            float l = std::sqrt(b.v.x * b.v.x + b.v.y * b.v.y) + 1e-4f;
+            fp::DrawBolt({X(b.p.x), b.p.y}, {b.v.x / l, b.v.y / l}, t);
+        }
         for (const Ring& r : rings) {
             if (land == 0) fp::DrawLoopRing({X(r.x), kGround - 26}, 26, t);
             else fp::DrawShockwave({X(r.x), kGround}, t);
@@ -1105,9 +1245,10 @@ private:
             if (!g.alive) continue;
             float a = g.dying >= 0 ? 1 - Clamp01(g.dying / 0.6f) : 1;
             if (land == 0) fp::DrawGoblin({X(g.x), kGround + (g.dying >= 0 ? g.dying * 30 : 0)}, 1.0f, g.face, g.walk, g.hurt, a);
-            else fp::DrawImp({X(g.x), kGround - g.hy + (g.dying >= 0 ? g.dying * 30 : 0)}, 1.0f, g.face, g.hy / 100, g.hurt, a, g.index, t);
+            else if (land == 1) fp::DrawImp({X(g.x), kGround - g.hy + (g.dying >= 0 ? g.dying * 30 : 0)}, 1.0f, g.face, g.hy / 100, g.hurt, a, g.index, t);
+            else fp::DrawGhost({X(g.x), kGround - g.hy + (g.dying >= 0 ? g.dying * 30 : 0)}, 1.0f, g.face, g.hurt, a, g.vy, t + g.home);
             if (g.dying < 0 && g.hp < g.maxHp) {   // a small health bar once hit
-                Rectangle hb = {X(g.x) - 24, kGround - (land == 0 ? 140 : 168) - g.hy, 48, 6};
+                Rectangle hb = {X(g.x) - 24, kGround - (land == 0 ? 140 : land == 1 ? 168 : 150) - g.hy, 48, 6};
                 DrawRectangleRounded(hb, 1, 6, Hex(0x2a2550));
                 DrawRectangleRounded({hb.x, hb.y, hb.width * g.hp / g.maxHp, hb.height}, 1, 6, Hex(0x6fd15a));
             }
@@ -1115,6 +1256,9 @@ private:
         // the hero (blinks while hurt)
         bool blink = hero.hurt > 0 && std::fmod(hero.hurt, 0.16f) < 0.08f;
         fp::DrawHero({X(hero.x), hero.y}, 1.0f, hero.face, hero.walk, hero.attack, t, blink);
+        // the Wyvern's aim goes over the hero, so its target can be seen
+        if (bossAwake && land == 2 && bossDying < 0 && wyAct == 1)
+            fp::DrawAimLine({X(WyvernMouth().x), WyvernMouth().y}, {X(aimTo.x), aimTo.y}, wyT < 0.9f ? 0.0f : 1.0f, t);
         for (const Popup& p : popups)
         {
             float a = 1 - p.age / 1.4f;

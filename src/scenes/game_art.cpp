@@ -558,6 +558,173 @@ void DrawShockwave(Vector2 at, float time) {
     }
 }
 
+// --------------------------------------------------------------- NULL Ghost ---
+// A little ghost that points at nothing: its arrow ends at a NULL tag, and its
+// badge says 0x0. solid: 1 normal .. 0 "NULL" (see-through: it can't be hit).
+void DrawGhost(Vector2 at, float scale, int face, float hurt, float alpha, float solid, float time) {
+    const float k = scale * 0.42f;
+    const float a = alpha * (0.25f + 0.75f * solid);
+    const float bob = std::sin(time * 3) * 6;
+    BeginLocal({at.x, at.y + bob * k}, face * k, k);
+    gHurt = hurt;
+    gAlpha = a;
+    const Color sheet = Hex(0xeef4ff), sheetD = Hex(0xb7c6ea), sheetL = WHITE, eye = Hex(0x1b1640), arrow = Hex(0x48e5ff);
+    GlowK({0, -110}, 150, Hex(0xb9d8ff), 0.25f);
+    // the body: a round head and a sheet with a wavy hem
+    std::vector<Vector2> body;
+    for (int i = 0; i <= 12; i++) {   // the dome
+        float ang = PI + PI * i / 12.0f;
+        body.push_back({std::cos(ang) * 62, -150 + std::sin(ang) * 62});
+    }
+    body.push_back({62, -40});
+    for (int i = 1; i < 6; i++) {   // the hem, waving
+        float x = 62 - i * 124.0f / 6, w = std::sin(time * 6 + i * 1.3f) * 7;
+        body.push_back({x, (i % 2 ? -14.0f : -34.0f) + w});
+    }
+    body.push_back({-62, -40});
+    // outline, then fill (a fan from the middle: the shape is round enough)
+    for (size_t i = 0; i < body.size(); i++) { DrawLineEx(body[i], body[(i + 1) % body.size()], 11, K(kInk)); DrawCircleV(body[i], 5.5f, K(kInk)); }
+    for (size_t i = 0; i < body.size(); i++) Tri({0, -100}, body[i], body[(i + 1) % body.size()], K(sheet));
+    DrawCircleV({-22, -176}, 18, K(Fade2(sheetL, 0.8f)));                 // shine
+    DrawCircleSector({0, -150}, 62, 10, 80, 16, K(Fade2(sheetD, 0.45f)));  // shade
+    // eyes, a little "o" mouth
+    for (int i = 0; i < 2; i++) {
+        Vector2 e = {(float)(i == 0 ? 2 : 34), -150};
+        DrawEllipse((int)e.x, (int)e.y, 9, 13, K(eye));
+        DrawCircleV({e.x + 3, e.y - 5}, 3.5f, K(WHITE));
+    }
+    DrawEllipse(18, -116, 7, 9, K(eye));
+    // an arm, holding a pointer that points down at nothing
+    OLine({40, -96}, {74, -84}, 16, sheet, 4.5f);
+    DrawLineEx({80, -86}, {108, -10}, 6, K(kInk));
+    DrawLineEx({80, -86}, {108, -10}, 3, K(arrow));
+    PolyO({{100, -26}, {120, -16}, {110, 4}}, arrow, 3.5f);
+    EndLocal();
+    if (a < 0.05f) return;
+    // its tag at the arrow's tip, and the address on its badge
+    LocalText("NULL", {124, 22}, {at.x, at.y + bob * k}, face * k, k, 26, Fade2(Hex(0xff8a9c), a), F_MONOBOLD);
+    float px = std::round(std::max(12.0f, 15 * scale));
+    Vector2 m = Measure("0x0", px, F_MONOBOLD);
+    Vector2 b = {at.x, at.y + bob * k - 236 * k - px};
+    Rectangle pill = {b.x - m.x / 2 - 8, b.y - 3, m.x + 16, px + 8};
+    DrawRectangleRounded(pill, 0.5f, 8, Fade2(Hex(0x101830), 0.85f * a));
+    DrawRectangleRoundedLinesEx(pill, 0.5f, 8, 1.5f, Fade2(Hex(0x48e5ff), a));
+    Text("0x0", b.x - m.x / 2, b.y + 1, px, Fade2(Hex(0xbff6ff), a), F_MONOBOLD);
+}
+
+// ------------------------------------------------------ Wild Pointer Wyvern ---
+// An ice wyvern born from a pointer nobody set: its tail ends in an arrowhead,
+// its chest says int *p; and the address it holds keeps changing (garbage).
+// face: 1 looks right. tilt: degrees (a dive leans it). wing: 0..1 flap.
+void DrawWyvern(Vector2 c, float scale, int face, float tilt, float wing, float hurt, float alpha, float time) {
+    const float k = scale * 0.62f;
+    rlDrawRenderBatchActive();
+    rlDisableBackfaceCulling();
+    rlPushMatrix();
+    rlTranslatef(c.x, c.y, 0);
+    rlRotatef(tilt * face, 0, 0, 1);
+    rlScalef(face * k, k, 1);
+    gHurt = hurt;
+    gAlpha = alpha;
+    const Color ice = Hex(0x8fc8f0), iceD = Hex(0x4f86c0), iceL = Hex(0xd8f0ff), wingC = Hex(0x3f6fb0), wingM = Hex(0x7fb4e8), belly = Hex(0xe8f6ff);
+    const Color eye = Hex(0xff3d5a), horn = Hex(0xf0f4ff);
+    GlowK({0, 0}, 260, Hex(0x9fd8ff), 0.2f);
+    float flap = std::sin(wing * 6.2832f);
+    // the far wing
+    PolyO({{-10, -40}, {-70, -190 - flap * 50}, {-190, -180 - flap * 40}, {-160, -110 - flap * 20}, {-70, -20}}, wingC, 5);
+    // the tail, ending in a pointer's arrowhead
+    Vector2 t0 = {-70, 20}, t1 = {-160, 70}, t2 = {-230, 20 + std::sin(time * 3) * 20}, t3 = {-300, 50 + std::sin(time * 3 + 1) * 24};
+    DrawSplineSegmentBezierCubic(t0, t1, t2, t3, 34, K(kInk));
+    DrawSplineSegmentBezierCubic(t0, t1, t2, t3, 24, K(iceD));
+    DrawSplineSegmentBezierCubic({t0.x, t0.y - 4}, {t1.x, t1.y - 4}, {t2.x, t2.y - 4}, {t3.x, t3.y - 4}, 7, K(ice));
+    Vector2 d = {t3.x - t2.x, t3.y - t2.y};
+    float l = std::sqrt(d.x * d.x + d.y * d.y) + 1e-4f;
+    d = {d.x / l, d.y / l};
+    Vector2 n = {-d.y, d.x};
+    PolyO({Add(t3, Mul(d, 44)), Add(t3, Mul(n, 24)), Add(t3, Mul(d, 6)), Add(t3, Mul(n, -24))}, Hex(0x48e5ff), 5);
+    // legs tucked under
+    OLine({-30, 50}, {-40, 96}, 22, iceD, 5);
+    OLine({30, 50}, {40, 96}, 22, ice, 5);
+    for (int i = 0; i < 3; i++) Tri({34.0f + i * 9, 104}, {40.0f + i * 9, 104}, {38.0f + i * 9, 118}, K(horn));
+    // the body
+    PolyO({{-90, 10}, {-40, -50}, {50, -60}, {100, -20}, {90, 50}, {20, 80}, {-60, 60}}, ice, 6);
+    Poly({{-70, 4}, {-34, -40}, {40, -48}, {20, -10}, {-40, 10}}, iceL);   // lit top
+    PolyO({{-30, 30}, {60, 10}, {80, 40}, {20, 70}, {-40, 56}}, belly, 4);   // belly plate
+    for (int i = 0; i < 4; i++) DrawLineEx({-24.0f + i * 26, 34.0f - i * 5}, {-28.0f + i * 26, 60.0f - i * 3}, 3, K(Fade2(Hex(0xa8c8e8), 0.9f)));
+    // the neck and head
+    PolyO({{60, -40}, {110, -110}, {150, -120}, {130, -60}, {96, -10}}, ice, 6);
+    PolyO({{120, -150}, {200, -150}, {250, -128}, {246, -112}, {190, -98}, {130, -96}, {110, -120}}, ice, 6);   // skull and snout
+    Poly({{126, -144}, {196, -144}, {236, -128}, {180, -124}, {130, -120}}, iceL);
+    PolyO({{140, -150}, {120, -200}, {160, -156}}, horn, 4.5f);   // horns
+    PolyO({{170, -150}, {168, -194}, {188, -152}}, horn, 4.5f);
+    PolyO({{196, -104}, {246, -110}, {232, -92}, {196, -92}}, Hex(0x2a3a6a), 4);   // the jaw, a little open
+    Tri({214, -104}, {220, -104}, {217, -96}, K(WHITE));
+    Tri({230, -106}, {236, -106}, {233, -98}, K(WHITE));
+    GlowK({178, -132}, 26, eye, 0.8f);
+    OC({178, -132}, 8, eye, 3.5f);
+    DrawEllipse(180, -132, 2, 6, K(kInk));
+    // the near wing, over the body
+    // (swept back, towards the tail, so the head stays clear)
+    PolyO({{30, -40}, {0, -210 - flap * 60}, {-110, -250 - flap * 50}, {-90, -165 - flap * 30}, {-150, -130 - flap * 20}, {-30, -25}}, wingM, 5);
+    DrawLineEx({20, -40}, {-110, -250 - flap * 50}, 5, K(wingC));
+    DrawLineEx({10, -34}, {-150, -130 - flap * 20}, 4, K(wingC));
+    rlPopMatrix();
+    rlDrawRenderBatchActive();
+    rlEnableBackfaceCulling();
+    gHurt = 0;
+    gAlpha = 1;
+    // the declaration on its chest, and the garbage address it holds (it changes all the time)
+    if (alpha < 0.05f) return;
+    auto W2S = [&](Vector2 p) {   // local to screen: scale (mirrored), rotate, translate
+        float x = p.x * face * k, y = p.y * k, r = tilt * face * DEG2RAD;
+        return Vector2{c.x + x * std::cos(r) - y * std::sin(r), c.y + x * std::sin(r) + y * std::cos(r)};
+    };
+    float px = std::round(std::max(10.0f, 22 * k));
+    Vector2 p1 = W2S({24, 36});
+    Vector2 m1 = Measure("int *p;", px, F_MONOBOLD);
+    Text("int *p;", p1.x - m1.x / 2, p1.y - px / 2, px, Fade2(Hex(0x2a4a80), alpha), F_MONOBOLD);
+    unsigned junk = 0x7FFE0000u + ((unsigned)(time * 7) * 2654435761u >> 16 & 0xFFFF);
+    std::string addr = TextFormat("p = 0x%08X ?", junk);
+    float px2 = std::round(std::max(11.0f, 16 * scale));
+    Vector2 m2 = Measure(addr, px2, F_MONOBOLD);
+    Vector2 p2 = W2S({20, -270});
+    Rectangle pill = {p2.x - m2.x / 2 - 9, p2.y - 4, m2.x + 18, px2 + 9};
+    DrawRectangleRounded(pill, 0.5f, 8, Fade2(Hex(0x101830), 0.85f * alpha));
+    DrawRectangleRoundedLinesEx(pill, 0.5f, 8, 1.5f, Fade2(Hex(0xff5c7a), alpha));
+    Text(addr, p2.x - m2.x / 2, p2.y, px2, Fade2(Hex(0xffb3c0), alpha), F_MONOBOLD);
+}
+
+// The Wyvern's aim: a dashed red line from its mouth to where it will shoot.
+// lock: 0 still tracking .. 1 locked (solid, about to fire).
+void DrawAimLine(Vector2 from, Vector2 to, float lock, float time) {
+    Vector2 d = {to.x - from.x, to.y - from.y};
+    float len = std::sqrt(d.x * d.x + d.y * d.y) + 1e-4f;
+    d = {d.x / len, d.y / len};
+    Color c = Fade2(Hex(0xff3d5a), 0.45f + 0.5f * lock);
+    if (lock >= 1) DrawLineEx(from, to, 4, c);
+    else
+        for (float s = std::fmod(time * 120, 28.0f); s < len; s += 28)
+            DrawLineEx(Add(from, Mul(d, s)), Add(from, Mul(d, std::min(len, s + 14))), 3, c);
+    // a target ring with *p on it
+    float r = 26 - 8 * lock;
+    DrawRing(to, r, r + 3, 0, 360, 32, c);
+    DrawLineEx({to.x - r - 8, to.y}, {to.x - r + 4, to.y}, 3, c);
+    DrawLineEx({to.x + r - 4, to.y}, {to.x + r + 8, to.y}, 3, c);
+    Text("*p", to.x + r + 6, to.y - r - 18, 16, c, F_MONOBOLD);
+}
+
+// The bolt it fires: an arrowhead of ice, flying along dir.
+void DrawBolt(Vector2 at, Vector2 dir, float time) {
+    Vector2 n = {-dir.y, dir.x};
+    Glow(at, 46, Hex(0x48e5ff), 0.55f);
+    for (int i = 1; i <= 5; i++) DrawCircleV(Add(at, Mul(dir, -i * 13.0f)), 8.0f - i, Fade2(Hex(0xbff6ff), 0.6f - i * 0.1f));
+    Vector2 tip = Add(at, Mul(dir, 26)), l = Add(Add(at, Mul(dir, -8)), Mul(n, 14)), r = Add(Add(at, Mul(dir, -8)), Mul(n, -14));
+    Tri(Add(tip, Mul(dir, 4)), Add(l, Mul(n, 3)), Add(r, Mul(n, -3)), kInk);
+    Tri(tip, l, r, Hex(0x9ff5ff));
+    Tri(tip, Add(at, Mul(n, 6)), at, WHITE);
+    (void)time;
+}
+
 // ------------------------------------------------------------------ story ---
 void DrawAda(Vector2 feet, float s, float time) {
     Frame f{feet, s, 1};
@@ -752,7 +919,7 @@ void DrawTerminalPillar(Vector2 feet, float time, bool ready, bool near) {
 
 // ------------------------------------------------------------ Stack Plains ---
 namespace {
-Texture2D gPlains = {}, gCanyon = {};
+Texture2D gPlains = {}, gCanyon = {}, gPeaks = {};
 bool gArtTried = false;
 
 Texture2D LoadBackdrop(const std::string& path) {
@@ -771,6 +938,7 @@ void LoadArt(const std::string& resourceDir) {
     gArtTried = true;
     gPlains = LoadBackdrop(resourceDir + "/backgrounds/stack_plains.png");
     gCanyon = LoadBackdrop(resourceDir + "/backgrounds/array_canyon.png");
+    gPeaks = LoadBackdrop(resourceDir + "/backgrounds/pointer_peaks.png");
 }
 
 // A painted backdrop, drifting slowly (parallax). It is drawn bigger than
@@ -898,6 +1066,70 @@ void DrawArrayCanyon(float cam, float time) {
             Tri({x + 16, kGround + 2}, {x + 22, kGround - 9}, {x + 24, kGround + 2}, tuft);
         }
         if (seed % 4 == 1) DrawEllipse((int)x + 40, (int)kGround + 2, 9, 5, pebble);
+    }
+}
+
+// ----------------------------------------------------------- Pointer Peaks ---
+void DrawPointerPeaks(float cam, float time) {
+    Rectangle scr = ScreenRect();
+    const float L = scr.x, R = scr.x + scr.width;
+    const bool painted = gPeaks.id != 0;
+    if (painted) PaintedSky(gPeaks, cam, scr);
+    else {   // by hand: a cold sky and sharp peaks
+        DrawRectangleGradientV((int)L, 0, (int)scr.width + 1, (int)kGround, Hex(0xbcdcff), Hex(0xe6f2ff));
+        struct Layer { float speed, base, amp, freq; unsigned col; };
+        const Layer layers[3] = {{0.15f, 430, 140, 0.004f, 0xc4d2ec}, {0.35f, 520, 90, 0.007f, 0xa8b8dc}, {0.6f, 590, 40, 0.012f, 0x8ea2cc}};
+        for (const Layer& ly : layers)
+            for (float x = L; x < R; x += 6) {
+                float wx = x + cam * ly.speed;
+                float s = std::fabs(std::fmod(wx * ly.freq, 2.0f) - 1);   // a zig-zag: sharp peaks
+                float hh = ly.base - ly.amp * (1 - s);
+                DrawRectangle((int)x, (int)hh, 7, (int)(kGround - hh) + 1, Hex(ly.col));
+            }
+    }
+    // floating pointers: a box with an arrow to the value it points at
+    for (int i = 0; i < 6; i++) {
+        float wx = i * 760.0f + 260;
+        float x = wx - cam * 0.45f;
+        x = std::fmod(x - L + 4560 * 10, 4560.0f) + L - 400;
+        if (x < L - 300 || x > R + 300) continue;
+        float y = 150 + (i % 3) * 80 + std::sin(time * 0.7f + i * 1.9f) * 9;
+        const Color fill = Fade2(Hex(0xf6fbff), 0.6f), line = Fade2(Hex(0x7a90c0), 0.6f), ink = Fade2(Hex(0x5a6e9a), 0.85f);
+        Rectangle p = {x - 70, y, 40, 30}, v = {x + 30, y, 40, 30};
+        DrawRectangleRounded(p, 0.2f, 6, fill);
+        DrawRectangleRoundedLinesEx(p, 0.2f, 6, 1.5f, line);
+        DrawRectangleRounded(v, 0.2f, 6, fill);
+        DrawRectangleRoundedLinesEx(v, 0.2f, 6, 1.5f, line);
+        DrawCircleV({p.x + 20, p.y + 15}, 4, ink);
+        DrawLineEx({p.x + 24, p.y + 15}, {v.x - 6, v.y + 15}, 2, ink);
+        Tri({v.x - 2, v.y + 15}, {v.x - 10, v.y + 10}, {v.x - 10, v.y + 20}, ink);
+        TextCenter(std::to_string((i * 13 + 7) % 50), v, 14, ink, F_MONOBOLD);
+        TextCenter(i % 2 ? "p" : "q", {p.x, p.y + 32, p.width, 14}, 11, ink, F_MONOBOLD);
+    }
+    // snow, drifting down (two layers, the near one faster)
+    for (int i = 0; i < 70; i++) {
+        float layer = i % 2 ? 1.0f : 0.55f;
+        float sx = std::fmod(i * 97.0f - cam * 0.3f * layer + std::sin(time * 0.8f + i) * 18 + 100000, scr.width + 40) + L - 20;
+        float sy = std::fmod(i * 53.0f + time * 40 * layer, kGround + 20) - 10;
+        DrawCircleV({sx, sy}, 1.5f + layer * 1.6f, Fade2(WHITE, 0.55f + 0.3f * layer));
+    }
+    // the ground: snow on top, blocks of ice below
+    const Color soil = Hex(0x3a4a72), snow = Hex(0xf4f8ff), snowD = Hex(0xc8d6f0), ice0 = Hex(0x6f8ec4), ice1 = Hex(0x5f7cb2);
+    DrawRectangle((int)L, (int)kGround, (int)scr.width + 1, (int)(H - kGround) + 1, soil);
+    DrawRectangle((int)L, (int)kGround, (int)scr.width + 1, 14, snow);
+    DrawRectangle((int)L, (int)kGround + 14, (int)scr.width + 1, 6, snowD);
+    for (float x = L - std::fmod(cam, 64.0f) - 64; x < R; x += 64) {
+        float wx = x + cam;
+        int seed = (int)std::floor(wx / 64);
+        for (int row = 0; row < 3; row++) {
+            float y = kGround + 32 + row * 40.0f, xo = (row % 2) * 32.0f;
+            DrawRectangleRounded({x + xo + 4, y, 56, 30}, 0.2f, 4, row == 0 ? ice0 : ice1);
+            DrawRectangleRounded({x + xo + 8, y + 3, 48, 4}, 1, 4, Fade2(Hex(0xa8c4ee), 0.6f));
+        }
+        if (seed % 3 == 0) DrawEllipse((int)x + 20, (int)kGround + 1, 16, 6, snow);   // little drifts
+        if (seed % 5 == 2) {   // an icicle hanging from the edge
+            Tri({x + 44, kGround + 14}, {x + 52, kGround + 14}, {x + 48, kGround + 34}, Hex(0xdcecff));
+        }
     }
 }
 

@@ -30,6 +30,15 @@ void DrawGolem(Vector2 feet, float scale, float time, float pose, float hurt, fl
 void DrawStoneBlock(Vector2 center, float size, int value, float alpha);
 void DrawDropMarker(float x, float time, float progress, const char* label);
 void DrawShockwave(Vector2 groundPos, float time);
+// NULL Ghost, the floating enemy of the Pointer Peaks. at: the point under it.
+// solid: 1 normal .. 0 "NULL" (faded: it can't be hit, and it doesn't hurt).
+void DrawGhost(Vector2 at, float scale, int face, float hurt, float alpha, float solid, float time);
+// The Wild Pointer Wyvern, the Peaks' boss. face: 1 looks right; tilt in degrees
+// (a dive leans it); wing: 0..1 through a wing beat.
+void DrawWyvern(Vector2 center, float scale, int face, float tilt, float wing, float hurt, float alpha, float time);
+// Its aim (a dashed line to a target marked *p; lock 0..1) and the bolt it fires.
+void DrawAimLine(Vector2 from, Vector2 to, float lock, float time);
+void DrawBolt(Vector2 at, Vector2 dir, float time);
 // Princess Ada and the SEGFAULT, for the story.
 void DrawAda(Vector2 feet, float scale, float time);
 void DrawSegfault(Vector2 center, float scale, float time);
@@ -46,6 +55,8 @@ void LoadArt(const std::string& resourceDir);
 void DrawStackPlains(float cam, float time);
 // The Array Canyon: a painted desert (or mesas drawn by hand), floating arrays and sandstone.
 void DrawArrayCanyon(float cam, float time);
+// The Pointer Peaks: painted snowy peaks (or drawn by hand), floating pointers, snow and ice.
+void DrawPointerPeaks(float cam, float time);
 
 // The game's icon for the desktop.
 void DrawGameIcon(Rectangle r, float time, float hot);

@@ -44,6 +44,13 @@ skips the boot screen. The apps:
   in the top bar; when a session ends it rings, flashes the taskbar button and says what comes
   next. Finished minutes are kept per day and shown for the last week.
 
+**Screen recorder.** F9 (or *Record the screen* in the start menu) records what the app shows, on
+any screen, as an MP4 video in `segfault_recordings/` next to the app (*Recordings* in the start
+menu opens the folder). The frames are taken from the app's own picture, so the video is sharp and
+the red REC badge (click it, or F9, to stop) is not in it. There is no sound in the video. It needs
+[ffmpeg](https://ffmpeg.org/) installed (`winget install ffmpeg` on Windows) or `ffmpeg.exe` next to
+the app.
+
 The **exam countdown** turns from green to amber in the last week and to red in the last days,
 and glows on the day. The arrows that show on it move the date.
 
@@ -93,7 +100,7 @@ her back. Strike a bug and a question may appear: answer right for a critical hi
 strikes back (the last blow always asks one). Each land ends with a guardian you beat by writing
 code at a terminal: every test your code passes is a hit, and a compile error lets it strike you.
 
-Two chapters are playable:
+Three chapters are playable:
 
 1. **Stack Plains** (loops and numbers): Off-by-One Goblins, and the Infinite Loop Serpent, a
    snake in the shape of ∞ that spits loop rings along the ground (jump them).
@@ -101,6 +108,11 @@ Two chapters are playable:
    index it reached for (`[4]`, `[-1]`...), and the Matrix Golem, a giant whose body is an
    `int m[3][3]`. It drops blocks where you stand (a mark such as `m[2][0]` shows where each will
    land) or slams the ground to send a shockwave along it.
+3. **Pointer Peaks** (pointers and pointer arithmetic): NULL Ghosts that float at you pointing at
+   `NULL`, and every few seconds turn NULL themselves (see-through: the sword passes through them,
+   and they can't hurt you). The boss is the Wild Pointer Wyvern, an uninitialised `int *p;` whose
+   address keeps changing. It aims at you (a red line follows you, locks, then a bolt flies along
+   it) or dives across the arena close to the ground (jump).
 
 The questions and the boss's problem come from that land's sections of the course. The menu has
 New Game, Continue (the next land), Restart and Settings (rebindable keys, difficulty, question

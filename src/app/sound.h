@@ -19,6 +19,7 @@ enum Fx {
     FX_TERMINAL, FX_COMPILE_ERROR,                              // the boss's terminal
     FX_MENU_MOVE, FX_MENU_SELECT, FX_VICTORY,                   // menus, a chapter cleared
     FX_HOP, FX_GOLEM_WAKE, FX_SLAM, FX_ROCK_FALL,               // the Array Canyon: imps hopping, the Golem
+    FX_GHOST, FX_SCREECH, FX_AIM, FX_BOLT, FX_DIVE,             // the Pointer Peaks: ghosts fading, the Wyvern
     FX_COUNT
 };
 
@@ -30,7 +31,7 @@ void PlayFx(Fx effect, float volume);
 void SetSystemSounds(bool on);
 bool SystemSounds();
 
-// ---- music: songs by id ("title", "story", "plains", "boss", "canyon", "golem", "gameover") ----
+// ---- music: songs by id ("title", "story", "plains", "boss", "canyon", "golem", "peaks", "wyvern", "gameover") ----
 void Preload(const char* id);       // renders a song in the background, ready for later
 void PlayMusic(const char* id);     // fades over from what is playing; loops (but "gameover" plays once)
 void StopMusic();                   // fades out
