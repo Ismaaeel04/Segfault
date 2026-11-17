@@ -28,7 +28,7 @@ inline bool Parse(const std::string& s, long& out) {
 }
 
 inline std::string Format(int y, int m, int d) {
-    char buf[16];
+    char buf[40];
     std::snprintf(buf, sizeof(buf), "%04d-%02d-%02d", y, m, d);
     return buf;
 }

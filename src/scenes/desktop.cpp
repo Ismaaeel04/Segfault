@@ -342,7 +342,7 @@ private:
     void Clock(Rectangle bar) {
         std::time_t now = std::time(nullptr);
         std::tm tm = *std::localtime(&now);
-        char hm[8], date[16];
+        char hm[16], date[40];
         std::snprintf(hm, sizeof(hm), "%02d:%02d", tm.tm_hour, tm.tm_min);
         std::snprintf(date, sizeof(date), "%02d/%02d/%04d", tm.tm_mday, tm.tm_mon + 1, tm.tm_year + 1900);
         TextRight(hm, W + ExtraX() - 18, bar.y + 9, 14, col::heading, F_BOLD);
