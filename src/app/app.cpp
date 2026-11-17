@@ -202,6 +202,31 @@ void SaveAppSettings() {
     if (!runner::PreferredLabel().empty()) out << "compiler " << runner::PreferredLabel() << "\n";
 }
 
+void ToggleAppFullscreen(bool save) {
+#if defined(_WIN32) || defined(__APPLE__)
+    ToggleBorderlessWindowed();
+    app.fullscreen = IsWindowState(FLAG_BORDERLESS_WINDOWED_MODE);
+#else
+    // On Linux (Wayland / tiling WMs like Hyprland), borderless floating
+    // windows are often kept tiled or ignore SetWindowPos. ToggleFullscreen()
+    // calls glfwSetWindowMonitor() so the compositor enters real fullscreen.
+    static int savedW = 0, savedH = 0;
+    if (!IsWindowFullscreen()) {
+        savedW = GetScreenWidth();
+        savedH = GetScreenHeight();
+        int mon = GetCurrentMonitor();
+        int mw = GetMonitorWidth(mon), mh = GetMonitorHeight(mon);
+        if (mw > 0 && mh > 0) SetWindowSize(mw, mh);
+        ToggleFullscreen();
+    } else {
+        ToggleFullscreen();
+        if (savedW > 0 && savedH > 0) SetWindowSize(savedW, savedH);
+    }
+    app.fullscreen = IsWindowFullscreen();
+#endif
+    if (save) SaveAppSettings();
+}
+
 void SelectTheme(int index) {
     ui::ApplyTheme(index);
     const char* id = ui::Themes()[ui::CurrentTheme()].id;

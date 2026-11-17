@@ -130,6 +130,7 @@ std::vector<LeaderRow> LoadLeaderboard();
 void SelectTheme(int index);
 void LoadLastTheme(bool restoreSession = true);   // loads app settings (theme, cursor, trail, last account)
 void SaveAppSettings();                           // persists app-wide settings to segfault_settings.txt
+void ToggleAppFullscreen(bool save = true);       // toggles full screen (borderless on Win/macOS, native monitor fullscreen on Linux)
 void ThemePicker();
 // scenes/ai_panel.cpp: the SegFault AI side panel, drawn by main over the scene.
 constexpr float kAiPanelWidth = 460;

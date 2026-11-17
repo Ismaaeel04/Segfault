@@ -398,7 +398,7 @@ private:
         }
         Text("Full screen", fs.x + 44, fs.y + 8, 14, col::text, F_MEDIUM);
         Text("covers the Windows taskbar  -  F11", fs.x + 44, fs.y + 27, 12, col::faint, F_MEDIUM);
-        if (fsh && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) { ToggleBorderlessWindowed(); app.fullscreen = !app.fullscreen; SaveAppSettings(); }
+        if (fsh && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) ToggleAppFullscreen();
 
         // system sounds on or off
         Rectangle sr = {m.x + 12, m.y + 472, m.width - 24, 50};

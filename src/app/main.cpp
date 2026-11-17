@@ -454,7 +454,7 @@ int main(int argc, char** argv) {
     sources::Load(FindSolutionsDir(app.resourceDir));
     app.dataDir = GetApplicationDirectory();
     LoadLastTheme(!shotFile);
-    if (!shotFile && app.fullscreen) ToggleBorderlessWindowed();   // left in full screen last time
+    if (!shotFile && app.fullscreen) ToggleAppFullscreen(false);   // left in full screen last time
     runner::StartDetection(app.resourceDir);
     if (shotFile && argc >= 7) ApplyTheme(ThemeIndex(argv[6]));
     CreateScenes();
@@ -495,7 +495,7 @@ int main(int argc, char** argv) {
         SetMouseOffset((int)std::lround(-offX - extra * scale / px), (int)-offY);   // x = 0 is the left of the 1280 area
         SetMouseScale(px / scale, px / scale);
         // F11: full screen, like a real operating system (remembered)
-        if (IsKeyPressed(KEY_F11) && !shotFile) { ToggleBorderlessWindowed(); app.fullscreen = !app.fullscreen; SaveAppSettings(); }
+        if (IsKeyPressed(KEY_F11) && !shotFile) ToggleAppFullscreen();
 
         // ---- log out: scenes hold the student's open code, exam and quiz --
         if (app.signOutRequested) {
