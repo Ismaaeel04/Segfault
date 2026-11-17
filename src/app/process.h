@@ -22,6 +22,13 @@ struct ProcResult {
 ProcResult RunProcess(const std::vector<std::string>& args, const std::string& workDir, int timeoutMs,
                       const std::vector<std::string>* env = nullptr, const std::string& stdinFile = "");
 
+// A child process we feed through its standard input (its output is thrown
+// away), with no console window: ffmpeg, encoding the screen recorder's frames.
+struct PipeProc;
+PipeProc* StartPipeProcess(const std::vector<std::string>& args, const std::string& workDir);   // nullptr if it can't start
+bool PipeWrite(PipeProc* p, const void* data, size_t n);   // false once the child has gone
+int PipeClose(PipeProc* p, int waitMs);                    // closes its input, waits for it to finish; its exit code
+
 // Captures the environment after running a Windows batch file (vcvars64.bat).
 std::vector<std::string> CaptureBatchEnvironment(const std::string& batchFile);
 

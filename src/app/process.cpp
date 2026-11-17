@@ -201,6 +201,61 @@ std::vector<std::string> CaptureBatchEnvironment(const std::string& batchFile) {
     return env;
 }
 
+struct PipeProc { HANDLE process = nullptr, input = nullptr; };
+
+PipeProc* StartPipeProcess(const std::vector<std::string>& args, const std::string& workDir) {
+    if (args.empty()) return nullptr;
+    SECURITY_ATTRIBUTES sa = {sizeof(sa), nullptr, TRUE};
+    HANDLE readEnd = nullptr, writeEnd = nullptr;
+    if (!CreatePipe(&readEnd, &writeEnd, &sa, 1 << 20)) return nullptr;
+    SetHandleInformation(writeEnd, HANDLE_FLAG_INHERIT, 0);   // only the child's end is inherited
+    HANDLE nul = CreateFileA("NUL", GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, &sa, OPEN_EXISTING, 0, nullptr);
+    std::string cmd;
+    for (size_t i = 0; i < args.size(); i++) cmd += (i ? " " : "") + QuoteArg(args[i]);
+    std::vector<char> cmdBuf(cmd.begin(), cmd.end());
+    cmdBuf.push_back('\0');
+    STARTUPINFOA si = {};
+    si.cb = sizeof(si);
+    si.dwFlags = STARTF_USESTDHANDLES;
+    si.hStdInput = readEnd;
+    si.hStdOutput = nul;
+    si.hStdError = nul;
+    PROCESS_INFORMATION pi = {};
+    BOOL ok = CreateProcessA(nullptr, cmdBuf.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW, nullptr,
+                             workDir.empty() ? nullptr : workDir.c_str(), &si, &pi);
+    CloseHandle(readEnd);
+    if (nul != INVALID_HANDLE_VALUE) CloseHandle(nul);
+    if (!ok) { CloseHandle(writeEnd); return nullptr; }
+    CloseHandle(pi.hThread);
+    PipeProc* p = new PipeProc;
+    p->process = pi.hProcess;
+    p->input = writeEnd;
+    return p;
+}
+
+bool PipeWrite(PipeProc* p, const void* data, size_t n) {
+    if (!p || !p->input) return false;
+    const char* c = (const char*)data;
+    while (n > 0) {
+        DWORD wrote = 0;
+        if (!WriteFile(p->input, c, (DWORD)std::min<size_t>(n, 1 << 24), &wrote, nullptr) || wrote == 0) return false;
+        c += wrote;
+        n -= wrote;
+    }
+    return true;
+}
+
+int PipeClose(PipeProc* p, int waitMs) {
+    if (!p) return -1;
+    if (p->input) CloseHandle(p->input);   // end of input: the child finishes
+    DWORD code = (DWORD)-1;
+    if (WaitForSingleObject(p->process, (DWORD)waitMs) != WAIT_OBJECT_0) TerminateProcess(p->process, 1);
+    else GetExitCodeProcess(p->process, &code);
+    CloseHandle(p->process);
+    delete p;
+    return (int)code;
+}
+
 #else
 // ----------------------------------------------------------------- POSIX ---
 #include <fcntl.h>
@@ -288,4 +343,59 @@ ProcResult RunProcess(const std::vector<std::string>& args, const std::string& w
 }
 
 std::vector<std::string> CaptureBatchEnvironment(const std::string&) { return {}; }
+
+struct PipeProc { pid_t pid = -1; int input = -1; };
+
+PipeProc* StartPipeProcess(const std::vector<std::string>& args, const std::string& workDir) {
+    if (args.empty()) return nullptr;
+    int fds[2];
+    if (pipe(fds) != 0) return nullptr;
+    pid_t pid = fork();
+    if (pid < 0) { close(fds[0]); close(fds[1]); return nullptr; }
+    if (pid == 0) {
+        dup2(fds[0], 0);
+        close(fds[0]);
+        close(fds[1]);
+        int nul = open("/dev/null", O_WRONLY);
+        if (nul >= 0) { dup2(nul, 1); dup2(nul, 2); close(nul); }
+        if (!workDir.empty() && chdir(workDir.c_str()) != 0) _exit(127);
+        std::vector<char*> argv;
+        for (const std::string& a : args) argv.push_back(const_cast<char*>(a.c_str()));
+        argv.push_back(nullptr);
+        execvp(argv[0], argv.data());
+        _exit(127);
+    }
+    close(fds[0]);
+    signal(SIGPIPE, SIG_IGN);   // a child that dies early must not kill the app
+    PipeProc* p = new PipeProc;
+    p->pid = pid;
+    p->input = fds[1];
+    return p;
+}
+
+bool PipeWrite(PipeProc* p, const void* data, size_t n) {
+    if (!p || p->input < 0) return false;
+    const char* c = (const char*)data;
+    while (n > 0) {
+        ssize_t w = write(p->input, c, n);
+        if (w <= 0) return false;
+        c += w;
+        n -= (size_t)w;
+    }
+    return true;
+}
+
+int PipeClose(PipeProc* p, int waitMs) {
+    if (!p) return -1;
+    if (p->input >= 0) close(p->input);
+    int status = 0, code = -1;
+    for (int waited = 0;; waited += 20) {
+        pid_t r = waitpid(p->pid, &status, WNOHANG);
+        if (r == p->pid) { code = WIFEXITED(status) ? WEXITSTATUS(status) : -1; break; }
+        if (waited >= waitMs) { kill(p->pid, SIGKILL); waitpid(p->pid, &status, 0); break; }
+        usleep(20000);
+    }
+    delete p;
+    return code;
+}
 #endif

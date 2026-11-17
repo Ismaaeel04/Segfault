@@ -16,6 +16,7 @@
 #include "focus.h"
 #include "sound.h"
 #include "runner.h"
+#include "screencast.h"
 #include "theme.h"
 #include "ui.h"
 #include "content/content.h"
@@ -496,6 +497,8 @@ int main(int argc, char** argv) {
         SetMouseScale(px / scale, px / scale);
         // F11: full screen, like a real operating system (remembered)
         if (IsKeyPressed(KEY_F11) && !shotFile) ToggleAppFullscreen();
+        // F9: record the screen (SEGFAULT_REC_TEST records a --shot run, to test the recorder)
+        if ((IsKeyPressed(KEY_F9) && !shotFile) || (shotFile && frame == 2 && std::getenv("SEGFAULT_REC_TEST"))) rec::Toggle();
 
         // ---- log out: scenes hold the student's open code, exam and quiz --
         if (app.signOutRequested) {
@@ -567,6 +570,15 @@ int main(int argc, char** argv) {
         DrawCursorTrail(dt, app.progress.trail);
         EndMode2D();
         EndTextureMode();
+        // the screen recorder takes the finished picture, then its badge goes on top (not recorded)
+        rec::Capture(canvas);
+        if (rec::Recording()) {
+            BeginTextureMode(canvas);
+            BeginMode2D(cam);
+            rec::DrawBadge();
+            EndMode2D();
+            EndTextureMode();
+        }
 
         // ---- present ----------------------------------------------------
         BeginDrawing();
@@ -625,6 +637,8 @@ int main(int argc, char** argv) {
         }
     }
 
+    rec::Shutdown();   // a recording in progress is finished and saved
+    if (shotFile && std::getenv("SEGFAULT_REC_TEST")) printf("recorded: %s\n", rec::LastFile().c_str()), fflush(stdout);
     for (auto& s : gScenes) s.reset();
     if (!shotFile) {
         if (!app.user.empty()) app.progress.Save();

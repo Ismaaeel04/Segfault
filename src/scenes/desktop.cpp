@@ -8,6 +8,7 @@
 #include "app/app.h"
 #include "app/avatar.h"
 #include "app/focus.h"
+#include "app/screencast.h"
 #include "app/sound.h"
 #include "app/streak.h"
 #include "app/theme.h"
@@ -350,7 +351,7 @@ private:
     }
 
     void StartMenu(Rectangle start, bool input) {
-        const float h = 628;
+        const float h = 684;
         Rectangle m = {W / 2 - 180, H - 54 - 12 - h, 360, h};
         Shadow(m, 14, 2);
         RoundRect(m, 14, Mix(col::panel, col::bg2, 0.3f));
@@ -424,6 +425,25 @@ private:
             SaveAppSettings();
             snd::Play(snd::CLICK);
         }
+
+        // the screen recorder: start / stop, and the folder with the videos
+        Rectangle rr = {m.x + 12, m.y + 528, m.width - 24, 50};
+        Rectangle folder = {rr.x + rr.width - 104, rr.y + 10, 94, 30};
+        bool folderHover = input && MouseIn(folder);
+        bool rrh = input && MouseIn(rr) && !folderHover;
+        if (rrh) { RoundRect(rr, 10, Alpha(col::heading, 0.06f)); WantHand(); }
+        bool recording = rec::Recording();
+        Vector2 dot = {rr.x + 22, rr.y + 25};
+        DrawCircleV(dot, 9, Alpha(col::danger, recording ? 0.25f : 0.15f));
+        if (recording) RoundRect({dot.x - 4.5f, dot.y - 4.5f, 9, 9}, 2, col::danger);   // a stop square
+        else DrawCircleV(dot, 5.5f, col::danger);
+        Text(recording ? "Stop recording" : "Record the screen", rr.x + 44, rr.y + 8, 14, col::text, F_MEDIUM);
+        Text(rec::Available() ? "saves an MP4 video  -  F9" : "needs ffmpeg installed  -  F9", rr.x + 44, rr.y + 27, 12, col::faint, F_MEDIUM);
+        if (rrh && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) { rec::Toggle(); menu = false; snd::Play(snd::CLICK); }
+        RoundRect(folder, 8, folderHover ? col::panelHi : Alpha(col::panelHi, 0.6f));
+        TextCenter("Recordings", folder, 12.5f, folderHover ? col::heading : col::dim, F_BOLD);
+        if (folderHover) WantHand();
+        if (folderHover && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) { rec::OpenFolder(); menu = false; }
 
         // footer: shut down
         DrawRectangleRec({m.x, m.y + m.height - 62, m.width, 1}, col::border);
