@@ -817,7 +817,7 @@ void DrawStackPlains(float cam, float time) {
         float y = 150 + (i % 3) * 70 + std::sin(time * 0.8f + i) * 8;
         int n = 2 + i % 3;
         for (int k = 0; k < n; k++) {
-            Rectangle pl = {x - 46 + k * 4, y - k * 16, 92 - k * 8, 13};
+            Rectangle pl = {x - 46 + k * 4, y - k * 16, 92.0f - k * 8, 13};
             if (painted) {
                 DrawRectangleRounded(pl, 0.5f, 6, Fade2(Hex(0xf3f0ff), 0.42f + 0.08f * k));
                 DrawRectangleRoundedLinesEx(pl, 0.5f, 6, 1.5f, Fade2(Hex(0x9d93d8), 0.45f));

@@ -146,7 +146,7 @@ public:
             }
         }
         if (input && !menu && !clickedIcon && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && !MouseIn(bar)) selected = -1;
-        if (input && selected >= 0 && (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_KP_ENTER))) Open(selected, IconRect(selected));
+        if (input && !menu && selected >= 0 && (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_KP_ENTER))) Open(selected, IconRect(selected));
         if (input && !menu && (IsKeyPressed(KEY_DOWN) || IsKeyPressed(KEY_UP))) {   // arrows move between icons
             int d = IsKeyPressed(KEY_DOWN) ? 1 : -1;
             selected = selected < 0 ? 0 : (selected + d + APP_COUNT) % APP_COUNT;
@@ -342,7 +342,7 @@ private:
     void Clock(Rectangle bar) {
         std::time_t now = std::time(nullptr);
         std::tm tm = *std::localtime(&now);
-        char hm[8], date[16];
+        char hm[16], date[40];
         std::snprintf(hm, sizeof(hm), "%02d:%02d", tm.tm_hour, tm.tm_min);
         std::snprintf(date, sizeof(date), "%02d/%02d/%04d", tm.tm_mday, tm.tm_mon + 1, tm.tm_year + 1900);
         TextRight(hm, W + ExtraX() - 18, bar.y + 9, 14, col::heading, F_BOLD);
@@ -397,8 +397,12 @@ private:
             DrawLineEx({fb.x + 9, fb.y + 14}, {fb.x + 15, fb.y + 6}, 2, on);
         }
         Text("Full screen", fs.x + 44, fs.y + 8, 14, col::text, F_MEDIUM);
+#ifdef _WIN32
         Text("covers the Windows taskbar  -  F11", fs.x + 44, fs.y + 27, 12, col::faint, F_MEDIUM);
-        if (fsh && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) { ToggleBorderlessWindowed(); app.fullscreen = !app.fullscreen; SaveAppSettings(); }
+#else
+        Text("fills the whole screen  -  F11", fs.x + 44, fs.y + 27, 12, col::faint, F_MEDIUM);
+#endif
+        if (fsh && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) ToggleAppFullscreen();
 
         // system sounds on or off
         Rectangle sr = {m.x + 12, m.y + 472, m.width - 24, 50};
