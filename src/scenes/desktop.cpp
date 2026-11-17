@@ -146,7 +146,7 @@ public:
             }
         }
         if (input && !menu && !clickedIcon && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && !MouseIn(bar)) selected = -1;
-        if (input && selected >= 0 && (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_KP_ENTER))) Open(selected, IconRect(selected));
+        if (input && !menu && selected >= 0 && (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_KP_ENTER))) Open(selected, IconRect(selected));
         if (input && !menu && (IsKeyPressed(KEY_DOWN) || IsKeyPressed(KEY_UP))) {   // arrows move between icons
             int d = IsKeyPressed(KEY_DOWN) ? 1 : -1;
             selected = selected < 0 ? 0 : (selected + d + APP_COUNT) % APP_COUNT;
