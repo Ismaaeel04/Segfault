@@ -23,14 +23,16 @@ The exams are about **writing code**, so the app is too. It has three main parts
 
 ## Student accounts
 
-The app starts like a small operating system, **SegFault OS**: a boot console lists what it
-loads (lessons, problems, the compiler it finds), the logo shows with a spinner, and then the
+The app starts like a small operating system, **SegFault OS**, and like a real PC: first the
+firmware's POST screen (grey text on black with the computer's real processor, its memory counted
+up, and what the app loads: the compiler it finds, the lessons, the problems), a moment of black,
+then the logo with a ring of dots chasing round under it, and then the
 **sign-in screen**: the time over the wallpaper, and after any key or click the student's
 picture and password (or *Create an account* / *Forgot password?*). Signing in opens the desktop:
 its apps, a countdown to the exam, a taskbar, a start menu (with *Sign out* and *Shut down*) and a
 clock. **Desktop** on the home screen goes back to it without signing out. *Open SegFault at
-start-up* in the start menu opens SegFault itself after signing in; F11 is full screen. Any key
-skips the boot screen. The apps:
+start-up* in the start menu opens SegFault itself after signing in; F11 is full screen. A key or a
+click skips each part of the start-up. The apps:
 
 - **SegFault**: the lessons, problems, mock exams and quiz (login screen first).
 - **SegFault Editor**: your own `.c` and `.cpp` files, outside the problems. Make, open and

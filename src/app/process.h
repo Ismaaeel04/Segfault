@@ -29,6 +29,11 @@ PipeProc* StartPipeProcess(const std::vector<std::string>& args, const std::stri
 bool PipeWrite(PipeProc* p, const void* data, size_t n);   // false once the child has gone
 int PipeClose(PipeProc* p, int waitMs);                    // closes its input, waits for it to finish; its exit code
 
+// The machine, for the start-up screen: the processor's name ("" if unknown)
+// and how much memory it has (0 if unknown).
+std::string CpuName();
+unsigned long long TotalRamBytes();
+
 // Captures the environment after running a Windows batch file (vcvars64.bat).
 std::vector<std::string> CaptureBatchEnvironment(const std::string& batchFile);
 

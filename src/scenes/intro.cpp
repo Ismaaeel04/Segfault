@@ -1,10 +1,16 @@
 // ============================================================================
-// intro.cpp  -  "SegFault OS" booting: a console that lists what the app is
-// really loading (lessons, problems, the compiler it finds in the background),
-// then goes straight to the sign-in screen (login.cpp), or the desktop if the
-// last session is still open. Any key or click skips ahead.
+// intro.cpp  -  "SegFault OS" starting up, the way a PC does:
+//   1. the firmware's POST screen: grey text on black, with this machine's
+//      real processor and memory (counted up), and what the app really loads
+//      (the compiler it finds, the lessons, the problems);
+//   2. a moment of black while the "monitor" changes mode;
+//   3. the system's logo on black with a ring of dots chasing round under it
+//      (the timing of the progress ring Windows shows while it starts);
+// then the sign-in screen (login.cpp), or the desktop if the last session is
+// still open. A key or a click skips to the next part.
 // ============================================================================
 #include "app/app.h"
+#include "app/process.h"
 #include "app/runner.h"
 #include "app/sound.h"
 #include "app/theme.h"
@@ -12,17 +18,51 @@
 #include "content/content.h"
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
+#include <ctime>
+#include <thread>
 #include <vector>
 
 using namespace ui;
 
 namespace {
 
-struct BootLine {
-    std::string text;      // "Mounting /lessons"
-    std::string detail;    // "24 lessons"
-    bool waitsForCompiler = false;
+const Color kGrey = {192, 192, 192, 255};    // the firmware's text
+const Color kWhite = {255, 255, 255, 255};
+
+// --------------------------------------------------- the progress ring ---
+// Each dot follows these keyframes (a 5.5 s cycle, every dot 0.24 s behind the
+// one before): quick, slow, quick, slow round the circle, then it vanishes and
+// waits for the next lap. Angles are clockwise from the top.
+struct Key { float at, angle, alpha; int ease; };   // ease: 0 linear, 1 out, 2 in-out
+const Key kRing[] = {
+    {0.00f, 225, 1, 1}, {0.07f, 345, 1, 0}, {0.30f, 455, 1, 2}, {0.39f, 690, 1, 0},
+    {0.70f, 815, 1, 1}, {0.75f, 945, 1, 1}, {0.76f, 945, 0, 0}, {1.00f, 945, 0, 0},
 };
+
+float Ease(float u, int kind) {
+    if (kind == 1) return 1 - (1 - u) * (1 - u);
+    if (kind == 2) return u * u * (3 - 2 * u);
+    return u;
+}
+
+void DrawProgressRing(Vector2 c, float radius, float dot, float time) {
+    const float cycle = 5.5f, lag = 0.24f;
+    for (int i = 0; i < 5; i++) {
+        float tt = time - i * lag;
+        if (tt < 0) continue;
+        float p = std::fmod(tt, cycle) / cycle;
+        int k = 0;
+        while (k < 6 && p >= kRing[k + 1].at) k++;
+        const Key& a = kRing[k];
+        const Key& b = kRing[k + 1];
+        float u = Ease((p - a.at) / std::max(1e-4f, b.at - a.at), a.ease);
+        float ang = (a.angle + (b.angle - a.angle) * u) * DEG2RAD;
+        float alpha = a.alpha + (b.alpha - a.alpha) * u;
+        if (alpha <= 0.01f) continue;
+        DrawCircleV({c.x + std::sin(ang) * radius, c.y - std::cos(ang) * radius}, dot, Alpha(kWhite, alpha));
+    }
+}
 
 class BootScene : public Scene {
 public:
@@ -30,104 +70,111 @@ public:
     void Enter(const std::string& param) override {
         next = param;
         t = 0;
-        leaving = -1;
-        compilerAt = -1;
-        compilerDone = -1;
-        lines = {
-            {"Checking memory", "0x7ffe0000 - 0x7fffffff"},
-            {"Allocating heap", "malloc(65536)"},
-            {"Mounting /lessons", std::to_string(Lessons().size()) + " lessons"},
-            {"Mounting /problems", std::to_string(Problems().size()) + " problems"},
-            {"Loading /quiz", std::to_string(Questions().size()) + " questions"},
-            {"Loading theme", Themes()[CurrentTheme()].name},
-            {"Looking for a C / C++ compiler", "", true},
-            {"Dereferencing pointers", "*p = 42"},
-        };
+        postEnd = logoStart = leaving = -1;
+        compilerAt = compilerShown = -1;
+        cpu = CpuName();
+        if (cpu.empty()) cpu = "Unknown processor";
+        cores = std::max(1u, std::thread::hardware_concurrency());
+        ramK = TotalRamBytes() / 1024;
+        if (ramK == 0) ramK = 8ull * 1024 * 1024;
+        std::time_t now = std::time(nullptr);
+        std::tm tm = *std::localtime(&now);
+        char d[16];
+        std::strftime(d, sizeof(d), "%m/%d/%y", &tm);
+        date = d;
+        // SEGFAULT_BOOT_LOGO: start at the logo (to check it with --shot)
+        if (std::getenv("SEGFAULT_BOOT_LOGO")) { postEnd = 0; logoStart = 0; }
     }
 
     void Frame(float dt) override {
         t += dt;
-        const float step = 0.16f, start = 0.35f;
-        // how many lines are on screen; the compiler line waits (3 s at most)
-        int shown = std::clamp((int)((t - start) / step) + 1, 0, (int)lines.size());
-        int compilerLine = 6;
-        if (shown > compilerLine) {
-            if (compilerAt < 0) compilerAt = t;
-            bool found = runner::DetectionDone() || t - compilerAt > 3.0f;
-            if (!found) shown = compilerLine + 1;
-            else if (compilerDone < 0) compilerDone = t;
-            if (compilerDone >= 0) shown = std::min((int)lines.size(), compilerLine + 1 + (int)((t - compilerDone) / step));
+        bool key = t > 0.25f && (GetKeyPressed() != 0 || IsMouseButtonPressed(MOUSE_BUTTON_LEFT));
+        DrawRectangleRec(ScreenRect(), BLACK);
+
+        if (postEnd < 0) {   // ---- 1. POST
+            bool done = Post();
+            if (done || key) { postEnd = t; logoStart = t + (key ? 0.25f : 0.45f); }
+            return;
         }
-        bool finished = shown == (int)lines.size() && compilerDone >= 0 && t - compilerDone > step * 2 + 0.5f;
-        bool key = t > 0.3f && (GetKeyPressed() != 0 || IsMouseButtonPressed(MOUSE_BUTTON_LEFT));
-        // the console finishes (or a key is pressed), then goes straight to sign-in / desktop
-        if (leaving < 0 && (finished || key)) { leaving = t; snd::Play(snd::STARTUP); }
-        if (leaving >= 0 && (key || t - leaving > 0.35f)) { Leave(); return; }
+        if (t < logoStart) return;   // ---- 2. black, between the two
 
-        DrawRectangleRec(ScreenRect(), Mix(col::bg, BLACK, 0.55f));
-        const float x = 120, fs = 16, lh = 30;
-        float y = 120;
-        DrawLogo({x, y - 6, 44, 44}, t * 1.2f, 0.3f);
-        Text("SegFault OS 1.0", x + 60, y - 2, 22, col::heading, F_MONOBOLD);
-        Text("C & C++ exam prep  -  x86_64", x + 60, y + 24, 13, col::faint, F_MONO);
-        y += 84;
-
-        const float dots = x + 470;
-        for (int i = 0; i < shown; i++) {
-            const BootLine& l = lines[i];
-            bool waiting = l.waitsForCompiler && compilerDone < 0;
-            float age = Phase(t, start + i * step, 0.12f);
-            Color a = Alpha(col::text, age);
-            // [ OK ] / [ .. ] / [WARN]
-            std::string tag = "  OK  ";
-            Color tagCol = col::success;
-            std::string detail = l.detail;
-            if (l.waitsForCompiler) {
-                const Compiler* c = runner::Active();
-                if (waiting) { tag = Spinner(); tagCol = col::warn; }
-                else if (c) detail = c->label;
-                else { tag = " WARN "; tagCol = col::warn; detail = "none found"; }
-            }
-            Text("[", x, y, fs, Alpha(col::faint, age), F_MONO);
-            Text(tag, x + CodeCharWidth(fs), y, fs, Alpha(tagCol, age), F_MONOBOLD);
-            Text("]", x + CodeCharWidth(fs) * 7, y, fs, Alpha(col::faint, age), F_MONO);
-            Text(l.text, x + CodeCharWidth(fs) * 9, y, fs, a, F_MONO);
-            // dot leader up to the detail
-            float tx = x + CodeCharWidth(fs) * 9 + Measure(l.text, fs, F_MONO).x + 10;
-            for (float dx = tx; dx < dots - 8; dx += CodeCharWidth(fs)) Text(".", dx, y, fs, Alpha(col::faint, age * 0.7f), F_MONO);
-            Text(detail, dots, y, fs, Alpha(col::accent2, age), F_MONO);
-            y += lh;
+        // ---- 3. the logo and the ring
+        float lt = t - logoStart;
+        if (leaving < 0 && ((lt > 3.2f && runner::DetectionDone()) || lt > 6.0f || (key && lt > 0.2f))) {
+            leaving = t;
+            snd::Play(snd::STARTUP);
         }
-        // blinking cursor, then "Starting desktop..."
-        if (shown == (int)lines.size() && compilerDone >= 0) {
-            y += 10;
-            Text(appStart(), x, y, fs, col::heading, F_MONO);
+        float in = std::clamp(lt / 0.5f, 0.0f, 1.0f);
+        const float s = 132;
+        Rectangle logo = {W / 2 - s / 2, H * 0.40f - s / 2, s, s};
+        DrawLogo(logo, 0, 0);   // still, like a boot logo
+        if (in < 1) DrawRectangleRec(ScreenRect(), Alpha(BLACK, 1 - in));
+        if (lt > 0.7f) DrawProgressRing({W / 2, H * 0.73f}, 19, 3.1f, lt - 0.7f);
+        if (leaving >= 0) {
+            float k = std::clamp((t - leaving) / 0.45f, 0.0f, 1.0f);
+            DrawRectangleRec(ScreenRect(), Alpha(BLACK, k));
+            if (k >= 1) Leave();
         }
-        if (std::fmod(t, 1.0f) < 0.55f)
-            DrawRectangleRec({x + (shown == (int)lines.size() && compilerDone >= 0 ? Measure(appStart(), fs, F_MONO).x + 8 : 0),
-                              y + (shown == (int)lines.size() && compilerDone >= 0 ? 0 : 4), CodeCharWidth(fs), fs + 2}, col::accent);
-
-        // progress along the bottom
-        float p = std::min(1.0f, (float)shown / lines.size() * (compilerDone >= 0 ? 1.0f : 0.92f));
-        Rectangle bar = {x, H - 110, W - 240, 4};
-        RoundRect(bar, 2, col::panelHi);
-        if (p > 0) GradientRoundRect({bar.x, bar.y, std::max(4.0f, bar.width * p), bar.height}, 2, col::accent, col::accent2);
-        Text("press any key to skip", x, H - 92, 12.5f, Alpha(col::faint, 0.8f), F_MEDIUM);
-
-        if (leaving >= 0) DrawRectangleRec(ScreenRect(), Alpha(BLACK, std::clamp((t - leaving) / 0.35f, 0.0f, 1.0f)));
     }
 
 private:
-    std::string next;
-    std::vector<BootLine> lines;
-    float t = 0, leaving = -1, compilerAt = -1, compilerDone = -1;
+    std::string next, cpu, date;
+    unsigned cores = 1;
+    unsigned long long ramK = 0;
+    float t = 0, postEnd = -1, logoStart = -1, leaving = -1, compilerAt = -1, compilerShown = -1;
 
-    static float Phase(float t, float s, float len) { return std::clamp((t - s) / len, 0.0f, 1.0f); }
-    std::string Spinner() const {
-        static const char* f[] = {" |    ", " /    ", " -    ", " \\    "};
-        return f[(int)(t * 10) % 4];
+    // The firmware screen. Lines appear one after another; returns true once
+    // everything is shown and has stayed a moment.
+    bool Post() {
+        const float fs = 17, lh = 23, x = -ExtraX() + 40;
+        float y = 34;
+        auto Line = [&](float at, const std::string& s, Color c = kGrey) {
+            if (t >= at) Text(s, x, y, fs, c, F_MONO);
+            y += lh;
+        };
+        if (t < 0.25f) return false;   // the screen wakes up
+        // the vendor's mark, top right, as on a real board
+        DrawLogo({W + ExtraX() - 40 - 76, 30, 76, 76}, 0, 0);
+        Line(0.25f, "SegFault BIOS v5.50, (C) 2026 SegFault Systems, Inc.", kWhite);
+        Line(0.25f, "SegFault OS Mainboard  -  BIOS Date " + date);
+        y += lh;
+        Line(0.60f, "Main Processor : " + cpu);
+        Line(0.60f, "Logical Cores  : " + std::to_string(cores));
+        // the memory test counts up to what the machine really has
+        if (t >= 0.80f) {
+            float k = std::clamp((t - 0.80f) / 0.9f, 0.0f, 1.0f);
+            unsigned long long shown = (unsigned long long)(ramK * (k * k * (3 - 2 * k)));
+            shown -= shown % 1024;
+            Text("Memory Testing : " + std::to_string(k >= 1 ? ramK : shown) + "K" + (k >= 1 ? " OK" : ""), x, y, fs, kGrey, F_MONO);
+        }
+        y += lh * 2;
+        // the compiler: "Detecting..." until the search in the background ends (3 s at most)
+        const float detectAt = 1.9f;
+        if (t >= detectAt && compilerAt < 0) compilerAt = t;
+        bool found = compilerAt >= 0 && (runner::DetectionDone() || t - compilerAt > 3.0f);
+        if (found && compilerShown < 0) compilerShown = t;
+        if (t >= detectAt) {
+            std::string what = "Detecting C/C++ Compiler ... ";
+            if (compilerShown >= 0) {
+                const Compiler* c = runner::Active();
+                what += c ? c->label : "None";
+            } else {
+                static const char* dots[] = {"", ".", "..", "..."};
+                what += dots[(int)(t * 4) % 4];
+            }
+            Text(what, x, y, fs, kGrey, F_MONO);
+        }
+        y += lh;
+        float after = compilerShown >= 0 ? compilerShown : 1e9f;
+        Line(after + 0.20f, "Lessons ROM    : " + std::to_string(Lessons().size()) + " lessons");
+        Line(after + 0.35f, "Problem Bank   : " + std::to_string(Problems().size()) + " problems, " + std::to_string(Questions().size()) + " questions");
+        Line(after + 0.50f, "USB Device(s)  : 1 Keyboard, 1 Mouse");
+        y += lh;
+        Line(after + 0.75f, "Starting SegFault OS...");
+        // the bottom line, all the time
+        Text("Press DEL to run Setup, F12 for Boot Menu", x, H - 46, fs, kGrey, F_MONO);
+        return t > after + 1.35f;
     }
-    static std::string appStart() { return "Starting desktop..."; }
 
     void Leave() {
         // nobody signed in: the sign-in screen; the last session still open: straight in

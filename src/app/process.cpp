@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 
 static const size_t kMaxOutput = 512 * 1024;   // stop runaway printing
 
@@ -201,6 +202,24 @@ std::vector<std::string> CaptureBatchEnvironment(const std::string& batchFile) {
     return env;
 }
 
+std::string CpuName() {
+    char buf[256] = {};
+    DWORD size = sizeof(buf);
+    if (RegGetValueA(HKEY_LOCAL_MACHINE, "HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0", "ProcessorNameString",
+                     RRF_RT_REG_SZ, nullptr, buf, &size) != ERROR_SUCCESS)
+        return "";
+    std::string s = buf;
+    while (!s.empty() && s.back() == ' ') s.pop_back();
+    while (!s.empty() && s.front() == ' ') s.erase(s.begin());
+    return s;
+}
+
+unsigned long long TotalRamBytes() {
+    MEMORYSTATUSEX m = {};
+    m.dwLength = sizeof(m);
+    return GlobalMemoryStatusEx(&m) ? m.ullTotalPhys : 0;
+}
+
 struct PipeProc { HANDLE process = nullptr, input = nullptr; };
 
 PipeProc* StartPipeProcess(const std::vector<std::string>& args, const std::string& workDir) {
@@ -343,6 +362,30 @@ ProcResult RunProcess(const std::vector<std::string>& args, const std::string& w
 }
 
 std::vector<std::string> CaptureBatchEnvironment(const std::string&) { return {}; }
+
+// Linux keeps these in /proc; elsewhere (macOS) they stay unknown.
+std::string CpuName() {
+    std::ifstream in("/proc/cpuinfo");
+    std::string line;
+    while (std::getline(in, line))
+        if (line.rfind("model name", 0) == 0 && line.find(':') != std::string::npos) {
+            std::string s = line.substr(line.find(':') + 1);
+            while (!s.empty() && s.front() == ' ') s.erase(s.begin());
+            return s;
+        }
+    return "";
+}
+
+unsigned long long TotalRamBytes() {
+    std::ifstream in("/proc/meminfo");
+    std::string key;
+    unsigned long long kb = 0;
+    while (in >> key) {
+        if (key == "MemTotal:") { in >> kb; return kb * 1024; }
+        in.ignore(1 << 10, '\n');
+    }
+    return 0;
+}
 
 struct PipeProc { pid_t pid = -1; int input = -1; };
 
