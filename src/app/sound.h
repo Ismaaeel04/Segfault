@@ -20,6 +20,9 @@ enum Fx {
     FX_MENU_MOVE, FX_MENU_SELECT, FX_VICTORY,                   // menus, a chapter cleared
     FX_HOP, FX_GOLEM_WAKE, FX_SLAM, FX_ROCK_FALL,               // the Array Canyon: imps hopping, the Golem
     FX_GHOST, FX_SCREECH, FX_AIM, FX_BOLT, FX_DIVE,             // the Pointer Peaks: ghosts fading, the Wyvern
+    FX_DASH, FX_SQUISH, FX_DRIP, FX_BURP, FX_LOB, FX_SPAWN,     // the hero's dash; the Memory Forest's slimes and the Leak Lord
+    FX_LINK, FX_CREAK, FX_TRAVERSE, FX_WHIP,                    // Linked List City: nodes, the Tangled List
+    FX_BAT, FX_BEAM, FX_THROW, FX_BSOD,                         // the Heap: bats, the SEGFAULT
     FX_COUNT
 };
 
@@ -31,7 +34,7 @@ void PlayFx(Fx effect, float volume);
 void SetSystemSounds(bool on);
 bool SystemSounds();
 
-// ---- music: songs by id ("title", "story", "plains", "boss", "canyon", "golem", "peaks", "wyvern", "gameover") ----
+// ---- music: songs by id ("title", "story", "plains", "boss", "canyon", "golem", "peaks", "wyvern", "forest", "leak", "city", "tangle", "heap", "segfault", "gameover") ----
 void Preload(const char* id);       // renders a song in the background, ready for later
 void PlayMusic(const char* id);     // fades over from what is playing; loops (but "gameover" plays once)
 void StopMusic();                   // fades out

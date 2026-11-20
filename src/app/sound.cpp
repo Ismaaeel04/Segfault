@@ -310,12 +310,42 @@ std::vector<Seg> FxDef(Fx f) {
         case FX_BOLT: return {{P, 2400, 300, 0, 0.18f, 0.6f, 0.25f, 0}, {N, 12000, 4000, 0, 0.10f, 0.4f, 0, 0}};
         // the dive: wind rushing past
         case FX_DIVE: return {{N, 1200, 5000, 0, 0.55f, 0.6f, 0, 0}, {N, 5000, 1500, 0.55f, 0.35f, 0.5f, 0, 0}};
+        // the dash: a short whoosh, rising
+        case FX_DASH: return {{N, 2500, 9000, 0, 0.16f, 0.5f, 0, 0}, {P, 300, 700, 0, 0.10f, 0.25f, 0.125f, 0}};
+        // a slime hit: a wet squish
+        case FX_SQUISH: return {{T, 260, 90, 0, 0.16f, 0.8f, 0, 0}, {N, 3000, 800, 0, 0.12f, 0.4f, 0, 0}};
+        // a drip of leaked memory landing
+        case FX_DRIP: return {{T, 900, 1500, 0, 0.06f, 0.5f, 0, 0}, {T, 600, 300, 0.06f, 0.10f, 0.4f, 0, 0}};
+        // the Leak Lord wakes: a huge, low burp
+        case FX_BURP: return {{P, 90, 60, 0, 0.9f, 0.7f, 0.25f, 14}, {T, 70, 45, 0, 1.0f, 0.9f, 0, 0}, {N, 900, 300, 0, 0.8f, 0.4f, 0, 0}};
+        // spitting a blob
+        case FX_LOB: return {{T, 180, 520, 0, 0.14f, 0.8f, 0, 0}, {N, 4000, 1200, 0, 0.10f, 0.3f, 0, 0}};
+        // little slimes popping out
+        case FX_SPAWN: return {{T, 400, 900, 0, 0.08f, 0.6f, 0, 0}, {T, 500, 1100, 0.10f, 0.08f, 0.6f, 0, 0}};
+        // a link snapping: a bright metal clink
+        case FX_LINK: return {{P, 2200, 2100, 0, 0.05f, 0.5f, 0.25f, 0}, {P, 3300, 3100, 0.03f, 0.08f, 0.35f, 0.125f, 0}};
+        // the Tangled List wakes: a long creak, like a cable pulled tight
+        case FX_CREAK: return {{P, 120, 260, 0, 0.9f, 0.5f, 0.125f, 22}, {N, 700, 1400, 0, 0.9f, 0.35f, 0, 0}, {T, 60, 50, 0.2f, 0.8f, 0.8f, 0, 0}};
+        // p = p->next: a blip, then a thud where it lands
+        case FX_TRAVERSE: return {{P, 900, 1350, 0, 0.06f, 0.45f, 0.25f, 0}, {T, 150, 50, 0.05f, 0.20f, 0.9f, 0, 0}, {N, 3000, 600, 0.05f, 0.12f, 0.4f, 0, 0}};
+        // the whip cracking
+        case FX_WHIP: return {{N, 12000, 2000, 0, 0.12f, 0.7f, 0, 0}, {P, 1600, 300, 0, 0.15f, 0.4f, 0.125f, 0}};
+        // a bat diving: a thin squeak and the rush of wings
+        case FX_BAT: return {{P, 2600, 3400, 0, 0.07f, 0.35f, 0.125f, 30}, {N, 2000, 6000, 0.03f, 0.25f, 0.4f, 0, 0}};
+        // an error column crashing down: a buzz, then the hit
+        case FX_BEAM: return {{P, 220, 110, 0, 0.35f, 0.5f, 0.5f, 40}, {N, 9000, 1500, 0.05f, 0.3f, 0.6f, 0, 0}, {T, 90, 40, 0.05f, 0.3f, 0.9f, 0, 0}};
+        // the spear thrown
+        case FX_THROW: return {{N, 3000, 9000, 0, 0.2f, 0.6f, 0, 0}, {P, 500, 180, 0, 0.18f, 0.3f, 0.25f, 0}};
+        // the blue screen coming: a deep electric hum, rising
+        case FX_BSOD: return {{P, 60, 180, 0, 0.9f, 0.6f, 0.5f, 6}, {T, 50, 90, 0, 0.9f, 0.8f, 0, 0}, {N, 400, 3000, 0.4f, 0.5f, 0.3f, 0, 0}};
         default: return {};
     }
 }
 
 const float kFxLevel[FX_COUNT] = {0.35f, 0.55f, 0.60f, 0.60f, 0.60f, 0.32f, 0.50f, 0.50f, 0.50f, 0.70f, 0.35f, 0.70f, 0.75f, 0.35f, 0.50f, 0.22f, 0.35f, 0.60f,
-                                  0.30f, 0.70f, 0.65f, 0.50f, 0.40f, 0.55f, 0.35f, 0.50f, 0.50f};
+                                  0.30f, 0.70f, 0.65f, 0.50f, 0.40f, 0.55f, 0.35f, 0.50f, 0.50f,
+                                  0.35f, 0.50f, 0.35f, 0.70f, 0.45f, 0.40f, 0.35f, 0.60f, 0.55f, 0.50f,
+                                  0.35f, 0.65f, 0.55f, 0.70f};
 
 // ------------------------------------------------------- system sounds ---
 // A Rhodes-like electric piano for SegFault OS's own sounds.
@@ -410,6 +440,12 @@ const SongDef kSongs[] = {
     {"golem", "rpgchip14_battle_2.mid", true},
     {"peaks", "rpgchip08_castle_on_the_mountain.mid", true},
     {"wyvern", "rpgchip11_airship.mid", true},
+    {"forest", "rpgchip10_fountain_of_the_fairies.mid", true},
+    {"leak", "rpgchip06_dungeon.mid", true},
+    {"city", "rpgchip09_rainy_streets.mid", true},
+    {"tangle", "rpgchip04_in_the_royal_court.mid", true},
+    {"heap", "rpgchip05_pavane.mid", true},
+    {"segfault", "rpgchip12_the_evil_one.mid", true},
     {"gameover", "rpgchip15_game_over.mid", false},
 };
 const int kSongCount = (int)(sizeof(kSongs) / sizeof(kSongs[0]));
@@ -590,7 +626,9 @@ bool RenderToFiles(const std::string& musicDir, const std::string& outDir) {
     }
     const char* fxNames[FX_COUNT] = {"swing", "hit", "crit", "kill", "hurt", "jump", "quiz", "right", "wrong", "roar",
                                      "spit", "boss_hit", "boss_down", "terminal", "compile_error", "menu_move", "menu_select", "victory",
-                                     "hop", "golem_wake", "slam", "rock_fall", "ghost", "screech", "aim", "bolt", "dive"};
+                                     "hop", "golem_wake", "slam", "rock_fall", "ghost", "screech", "aim", "bolt", "dive",
+                                     "dash", "squish", "drip", "burp", "lob", "spawn", "link", "creak", "traverse", "whip",
+                                     "bat", "beam", "throw", "bsod"};
     for (int f = 0; f < FX_COUNT; f++) ok &= save(RenderFx(FxDef((Fx)f), kFxLevel[f]), std::string("fx_") + fxNames[f]);
     const char* uiNames[UI_COUNT] = {"click", "open", "close", "startup", "logon", "logoff", "shutdown", "error"};
     for (int u = 0; u < UI_COUNT; u++) ok &= save(RenderUi((Ui)u), std::string("system_") + uiNames[u]);
