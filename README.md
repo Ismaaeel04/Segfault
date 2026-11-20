@@ -102,7 +102,7 @@ her back. Strike a bug and a question may appear: answer right for a critical hi
 strikes back (the last blow always asks one). Each land ends with a guardian you beat by writing
 code at a terminal: every test your code passes is a hit, and a compile error lets it strike you.
 
-Three chapters are playable:
+All six chapters are playable:
 
 1. **Stack Plains** (loops and numbers): Off-by-One Goblins, and the Infinite Loop Serpent, a
    snake in the shape of ∞ that spits loop rings along the ground (jump them).
@@ -116,11 +116,40 @@ Three chapters are playable:
    address keeps changing. It aims at you (a red line follows you, locks, then a bolt flies along
    it) or dives across the arena close to the ground (jump).
 
+4. **Memory Forest** (memory management): Leak Slimes that ooze at you leaving puddles of leaked
+   bytes (step in one and it hurts) and grow with every leak (`malloc(16)`, `malloc(32)`...). The
+   boss is the Leak Lord, a crowned slime full of blocks nobody freed: it spits blobs in arcs that
+   leave puddles where they land, or squeezes out little slimes (one hit each).
+5. **Linked List City** (linked lists, and strings): Lost Nodes, boxes `[42|•]` on legs that walk
+   in lines, each one's next arrow pointing at the one behind it; kill the head and the line goes
+   on (`head = head->next`). The boss is the Tangled List, a spider whose body is a huge
+   `[HEAD|next]` node standing on legs of chained nodes. It lays a list along the street and sends
+   the pointer `p` hopping from node to node (`p = p->next`), crushing whatever stands on the one it
+   lands on (the next one is lit: step off it or jump), or cracks a chain of nodes along the
+   cobbles (jump).
+6. **The Heap** (the final exam: questions from every section, and one of the hardest problems):
+   Dangling Bats that fly overhead still pointing at freed memory and dive at you (hit them low, or
+   jump). The final boss is the SEGFAULT: it brings down columns of `0xC0000005` where you stand,
+   throws its broken pointer along the ground, and sends a blue screen across the whole arena
+   that only a dash gets through. Once half its tests pass, it rages. Beat it to free Ada; an
+   epilogue and the credits follow.
+
+**Chapters** on the menu shows every land reached so far, as a card with its painting, to play any
+of them again.
+
+**Controls and feel.** Move, jump (hold it to jump higher), attack, and dash (Shift or the right
+mouse button: a burst of speed you can't be hurt during, for getting through an attack). Jumping is
+forgiving: a press just before landing still counts. Hits freeze the action for a few hundredths of
+a second, the screen shakes on big ones (it can be switched off in Settings), bugs burst into
+pieces, dust flies when the hero jumps, lands and dashes, it squashes and stretches, consecutive hits
+make a combo, and the camera looks ahead of where the hero is going. The story's pictures stand in
+front of the paintings of their lands.
+
 The questions and the boss's problem come from that land's sections of the course. The menu has
 New Game, Continue (the next land), Restart and Settings (rebindable keys, difficulty, question
 timer, sound). Progress and settings are saved per student in `forgotten_pointer.txt`. The
-characters are drawn with raylib shapes; each land has a painted backdrop in
-`resources/backgrounds` (without it, the land is drawn by hand). Each land and each boss has its own song. The music is MIDI (in
+characters are drawn with raylib shapes; each land has a painting as its backdrop in
+`resources/backgrounds` (by Ombremonde; without it, the land is drawn by hand). Each land and each boss has its own song. The music is MIDI (in
 `resources/music`) played by a small 8-bit synthesiser in the app, with a lo-fi finish; the effects
 (sword, hits, a goblin falling, the boss going down...) and SegFault OS's system sounds are made in
 code too. `Segfault --render-sounds <folder>` writes them all as .wav files.
@@ -229,6 +258,8 @@ Windows/macOS builds are DPI-aware, so text stays sharp on any screen.
 ## Credits
 raylib (zlib), TinyCC (LGPL 2.1), Inter and JetBrains Mono (SIL OFL 1.1).
 Music: *15 Melodic RPG Chiptunes* by Aureolus_Omicron (CC0), from opengameart.org.
+The game's backgrounds: *Landscape Illustrations* by Ombremonde (CC0), from
+[ombremonde.itch.io](https://ombremonde.itch.io/pack-landscape-illustrations).
 Colour palettes: Catppuccin, Nord, Dracula, Gruvbox and Everforest (all MIT).
 Content is based on the SETU module material: Lab1.cpp, the Coding Exam 2 brief, and the
 "Pointers in C,C++" and "Memory Management" lecture notes.

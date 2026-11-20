@@ -14,6 +14,10 @@ if (NOT raylib_FOUND)
     include(FetchContent)
     set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
     set(BUILD_GAMES    OFF CACHE BOOL "" FORCE)
+    # raylib's usual settings, plus JPG: the game's painted backgrounds are JPGs
+    # (a fifth of the size of the same picture as a PNG)
+    set(CUSTOMIZE_BUILD ON CACHE BOOL "" FORCE)
+    set(SUPPORT_FILEFORMAT_JPG ON CACHE BOOL "" FORCE)
     FetchContent_Declare(raylib
         URL https://github.com/raysan5/raylib/archive/refs/tags/5.5.tar.gz
         DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
