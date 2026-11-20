@@ -127,7 +127,7 @@ struct Particle { float x, y, vx, vy, life, max, size, grav; Color c; int kind; 
 
 struct Popup { std::string text; float x, y, age; Color col; };
 
-enum State { MENU, NEW_GAME, SETTINGS, STORY, CHAPTER, PLAY, QUIZ, TERMINAL, PAUSE, DEAD, VICTORY, CONFIRM_RESTART, CHAPTERS, CREDITS };
+enum State { MENU, NEW_GAME, SETTINGS, STORY, CHAPTER, PLAY, QUIZ, TERMINAL, PAUSE, DEAD, VICTORY, CONFIRM_RESTART, CHAPTERS, CREDITS, ENDING };
 
 const float kLevelLen = 5200;
 
@@ -231,6 +231,17 @@ public:
         else if (p == "ending2") StartStory(kAfterChapter6, 4, CREDITS), panelIdx = 3, panelT = 100;
         else if (p == "credits") { state = CREDITS; creditsT = 9; }
         else if (p == "chapters") { chaptersDone = 4; state = CHAPTERS; }
+        else if (p == "finale") {   // the last boss just beaten: the finale
+            ResetLevel();
+            state = PLAY;
+            goblins.clear();
+            hero.x = kLevelLen - 900;
+            Update(0.016f);
+            bossDying = 3;
+            StartEnding();
+            if (const char* at = std::getenv("FP_ENDING_AT"))
+                for (int i = 0, n = (int)(std::atof(at) * 60); i < n; i++) EndingUpdate(1 / 60.0f);
+        }
         else if (p == "chapter") StartChapter(land), chapterT = 0.5f;
         else if (p == "play" || p == "quiz" || p == "boss" || p == "terminal") {
             ResetLevel();
@@ -267,6 +278,7 @@ public:
             case VICTORY: Victory(dt); break;
             case CHAPTERS: Chapters(); break;
             case CREDITS: Credits(dt); break;
+            case ENDING: EndingUpdate(dt); Draw(); EndingOverlay(); break;
         }
     }
 
@@ -313,6 +325,12 @@ private:
     bool dashHint = false;             // "dash through it" has been said
     float creditsT = 0;
     int chapSel = 0;
+    // the finale: the way up rising, the walk and the climb, Ada freed, THE END
+    bool endingOn = false;
+    int endPhase = 0, endColumn = -1;
+    float endT = 0, endPhaseT = 0, stairX0 = 0;
+    static constexpr float kStepW = 48, kStepH = 36;
+    static constexpr int kSteps = 5;
     std::vector<Popup> popups;
     float cam = 0, shake = 0;
     bool arena = false, bossAwake = false;
@@ -770,6 +788,7 @@ private:
         walls.clear();
         sfAct = 0;
         sfCd = 2.4f;
+        endingOn = false;
         tiles.clear();
         tlAct = 0;
         tlCd = 2.4f;
@@ -1725,11 +1744,171 @@ private:
     }
 
     void Win() {
-        Fx(snd::FX_VICTORY);
         chaptersDone = std::max(chaptersDone, land + 1);
         Save();
+        if (land == kLandCount - 1) { StartEnding(); return; }   // the SEGFAULT is gone: the finale
+        Fx(snd::FX_VICTORY);
         state = VICTORY;
         deadT = 0;
+    }
+
+    // ------------------------------------------------------------- finale --
+    // With the SEGFAULT gone, blocks of memory rise out of the floor into a
+    // stair and a platform; the Debugger walks over and climbs it; at the top,
+    // Ada's cage lifts away; THE END; then the credits.
+    float StairTop(float x) const {
+        if (!endingOn || x < stairX0) return kGround;
+        int i = (int)((x - stairX0) / kStepW);
+        return kGround - kStepH * std::min(kSteps, i + 1);
+    }
+    float PlatX() const { return stairX0 + kSteps * kStepW; }
+    float AdaX() const { return PlatX() + 150; }
+
+    void StartEnding() {
+        Rectangle scr = ScreenRect();
+        state = ENDING;
+        endingOn = true;
+        endPhase = 0;
+        endColumn = -1;
+        endT = endPhaseT = 0;
+        if (arena) cam = arenaCam;   // the camera holds still on the arena for the finale
+        stairX0 = cam + scr.x + scr.width * 0.42f;
+        if (hero.x > stairX0 - 60) hero.x = stairX0 - 160;
+        hero.y = kGround;
+        hero.vy = 0;
+        hero.attack = -1;
+        hero.dash = 0;
+        hero.hurt = 0;
+        hero.squash = 0;
+        hero.face = 1;
+        bolts.clear(); beams.clear(); walls.clear(); rings.clear(); rocks.clear(); blobs.clear(); puddles.clear(); tiles.clear();
+        for (Goblin& g : goblins) if (g.alive && g.dying < 0) g.dying = 0;
+        snd::PlayMusic("story");
+    }
+
+    void EndingUpdate(float dt) {
+        endT += dt;
+        endPhaseT += dt;
+        if (endPhase == 0) {   // the way up rises, one column at a time
+            int col = (int)(endT / 0.16f);
+            if (col != endColumn && col <= kSteps) {
+                endColumn = col;
+                float x = col < kSteps ? stairX0 + col * kStepW + kStepW / 2 : PlatX() + 110;
+                Fx(snd::FX_SLAM, 0.35f);
+                Burst(x, kGround - 4, 10, Hex(0xd8b8ff), 260, 0, -40, 6);
+                Shake(0.12f);
+            }
+            if (endT > kSteps * 0.16f + 0.8f) { endPhase = 1; endPhaseT = 0; }
+        } else if (endPhase == 1) {   // the walk, and the climb
+            hero.face = 1;
+            hero.x += 175 * dt;
+            hero.walk += dt * 10;
+            float top = StairTop(hero.x);
+            hero.y += (top - hero.y) * std::min(1.0f, dt * 16);
+            if (hero.x >= PlatX() + 36) { hero.x = PlatX() + 36; hero.walk = 0; endPhase = 2; endPhaseT = 0; }
+        } else if (endPhase == 2) {   // the cage lifts, Ada is free
+            hero.y = StairTop(hero.x);
+            if (endPhaseT - dt < 0.4f && endPhaseT >= 0.4f) {
+                Fx(snd::FX_VICTORY);
+                Burst(AdaX(), kGround - kSteps * kStepH - 90, 40, Hex(0xffd27a), 520, 1, 300, 5);
+                Burst(AdaX(), kGround - kSteps * kStepH - 90, 20, Hex(0xff9ad8), 380, 0, -60, 6);
+            }
+            if (endPhaseT > 2.4f) { endPhase = 3; endPhaseT = 0; }
+        } else {   // THE END
+            bool key = IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE) || IsKeyPressed(KEY_ESCAPE) || IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
+            if ((endPhaseT > 1.5f && key) || endPhaseT > 8) {
+                endingOn = false;
+                state = CREDITS;
+                creditsT = 0;
+                snd::PlayMusic("title");
+            }
+        }
+        // the effects keep moving
+        shake = std::max(0.0f, shake - dt * 1.6f);
+        for (Particle& p : parts) {
+            p.vy += p.grav * dt;
+            p.vx *= 1 - std::min(1.0f, dt * 2.5f);
+            p.x += p.vx * dt;
+            p.y += p.vy * dt;
+            p.life -= dt;
+        }
+        parts.erase(std::remove_if(parts.begin(), parts.end(), [](const Particle& p) { return p.life <= 0; }), parts.end());
+    }
+
+    // The stair, the platform, Ada and her cage (in the world, before the hero).
+    void DrawFinale(float c) {
+        auto X = [&](float wx) { return wx - c; };
+        const Color ink = Hex(0x16142a), fill = Hex(0x5a3a86), lit = Hex(0x9a7ad0), dark = Hex(0x3a2458);
+        auto Block = [&](float x, float topY, float w, float rise) {   // a column of memory blocks, rising
+            float h = (kGround - topY) * rise;
+            if (h <= 1) return;
+            Rectangle r = {X(x), kGround - h, w, h};
+            DrawRectangleRec({r.x - 3, r.y - 3, r.width + 6, r.height + 3}, ink);
+            DrawRectangleRec(r, fill);
+            DrawRectangleRec({r.x, r.y, r.width, 6}, lit);
+            for (float y = r.y + kStepH; y < kGround; y += kStepH) DrawRectangle((int)r.x, (int)y, (int)r.width, 2, dark);
+            DrawRectangle((int)(r.x + r.width - 6), (int)r.y + 6, 6, (int)h - 6, Fade(dark, 0.6f));
+        };
+        for (int i = 0; i < kSteps; i++) {
+            float rise = Clamp01((endT - i * 0.16f) / 0.3f);
+            rise = 1 - (1 - rise) * (1 - rise);
+            Block(stairX0 + i * kStepW, kGround - kStepH * (i + 1), kStepW, rise);
+            if (rise >= 1) Text(TextFormat("%02X", 0x3A + i * 7), X(stairX0 + i * kStepW) + 14, kGround - kStepH * (i + 1) + 12, 11, Fade(Hex(0xd8c8ff), 0.5f), F_MONOBOLD);
+        }
+        float riseP = Clamp01((endT - kSteps * 0.16f) / 0.35f);
+        riseP = 1 - (1 - riseP) * (1 - riseP);
+        const float topY = kGround - kSteps * kStepH;
+        Block(PlatX(), topY, 230, riseP);
+        if (riseP <= 0.98f) return;
+        DrawRectangle((int)X(PlatX()), (int)topY - 4, 230, 4, Hex(0xe8b44a));   // a golden rim
+        // Ada, and the cage round her until it lifts
+        Vector2 ada = {X(AdaX()), topY};
+        fp::DrawShadow(ada, 34, 0);
+        SoftGlow({ada.x, topY - 70}, 120, Hex(0xffd27a), endPhase >= 2 ? 0.35f : 0.12f);
+        fp::DrawAda(ada, 1.0f, t);
+        float lift = endPhase < 2 ? 0 : endPhase > 2 ? 1 : Clamp01((endPhaseT - 0.3f) / 1.1f);   // up, and it stays up
+        lift = lift * lift;
+        float alpha = 1 - Clamp01((lift - 0.6f) / 0.4f);
+        if (alpha > 0) {
+            float cx = ada.x, top = topY - 175 - lift * 320, bottom = topY - lift * 320;
+            Color bar = Fade(Hex(0xe8b44a), alpha), barD = Fade(Hex(0x9a6a1c), alpha), ink2 = Fade(ink, alpha);
+            for (int i = 0; i < 7; i++) {
+                float x = cx - 54 + i * 18;
+                DrawLineEx({x, top + 10}, {x, bottom}, 7, ink2);
+                DrawLineEx({x, top + 10}, {x, bottom}, 4, i % 2 ? bar : barD);
+            }
+            DrawRectangleRounded({cx - 64, top - 6, 128, 18}, 0.6f, 8, ink2);
+            DrawRectangleRounded({cx - 61, top - 3, 122, 12}, 0.6f, 8, bar);
+            DrawRectangleRounded({cx - 64, bottom - 8, 128, 12}, 0.6f, 8, ink2);
+            DrawRectangleRounded({cx - 61, bottom - 6, 122, 8}, 0.6f, 8, bar);
+            DrawCircleV({cx, top - 16}, 9, ink2);
+            DrawCircleV({cx, top - 16}, 6, bar);
+        }
+    }
+
+    // THE END, over the scene, with hearts drifting up from the two of them.
+    void EndingOverlay() {
+        if (endPhase < 2) return;
+        float c = cam;
+        float ax = AdaX() - c, topY = kGround - kSteps * kStepH;
+        for (int i = 0; i < 8; i++) {   // hearts
+            float u = std::fmod(endPhaseT * 0.45f + i * 0.125f, 1.0f);
+            if (endPhase == 2 && endPhaseT < 0.5f) break;
+            float x = ax - 60 + std::sin(i * 2.3f + u * 6) * 40 + (i % 3) * 20, y = topY - 120 - u * 260;
+            float a = std::sin(u * PI) * 0.8f, r = 7 + (i % 3) * 2.0f;
+            Color col = Fade(Hex(0xff6a9a), a);
+            DrawCircleV({x - r * 0.5f, y}, r * 0.6f, col);
+            DrawCircleV({x + r * 0.5f, y}, r * 0.6f, col);
+            DrawTriangle({x - r * 1.05f, y + r * 0.15f}, {x, y + r * 1.25f}, {x + r * 1.05f, y + r * 0.15f}, col);
+        }
+        if (endPhase < 3) return;
+        float a = Clamp01(endPhaseT / 1.2f);
+        Rectangle scr = ScreenRect();
+        DrawRectangleGradientV((int)scr.x, 0, (int)scr.width + 1, 300, Fade(Hex(0x0b0918), 0.65f * a), Fade(Hex(0x0b0918), 0));
+        TextCenter("THE END", {3, 93, W, 80}, 76, Fade(Hex(0x0b0918), 0.6f * a), F_HEAVY);
+        TextCenter("THE END", {0, 90, W, 80}, 76, Fade(Hex(0xffc14d), a), F_HEAVY);
+        TextCenter("Ada is free, and the Kernel runs again.", {0, 186, W, 26}, 20, Fade(Hex(0xf0e8ff), a), F_MEDIUM);
+        if (endPhaseT > 1.5f) TextCenter("Enter / click to continue", {0, H - 36, W, 20}, 13, Fade(Hex(0xd8d3f5), 0.8f), F_MEDIUM);
     }
 
     // ------------------------------------------------------------ chapters --
@@ -1959,6 +2138,7 @@ private:
             Text("NULL", X(tiles.back().x) + 60, kGround - 26, 15, Hex(0xff8a9c), F_MONOBOLD);
             fp::DrawCursorP({X(tiles[at].x), kGround - 40}, t);
         }
+        if (endingOn) DrawFinale(c);
         for (const Puddle& p : puddles) fp::DrawPuddle(X(p.x), p.life, t);
         for (const Bolt& b : blobs) fp::DrawBlob({X(b.p.x), b.p.y}, t);
         for (const Bolt& b : bolts) {
@@ -2000,7 +2180,7 @@ private:
         }
         // the hero (blinks while hurt)
         bool blink = hero.hurt > 0 && std::fmod(hero.hurt, 0.16f) < 0.08f;
-        fp::DrawShadow({X(hero.x), kGround}, 40, (kGround - hero.y) / 220);
+        fp::DrawShadow({X(hero.x), StairTop(hero.x)}, 40, (StairTop(hero.x) - hero.y) / 220);
         {   // squash and stretch, around its feet
             float sq = 1 + hero.squash;
             rlPushMatrix();
@@ -2047,7 +2227,7 @@ private:
             DrawRectangleGradientH((int)scr2.x, 0, 120, (int)H, red, none);
             DrawRectangleGradientH((int)(scr2.x + scr2.width) - 120, 0, 121, (int)H, none, red);
         }
-        Hud();
+        if (state != ENDING) Hud();
     }
 
     void Hud() {
