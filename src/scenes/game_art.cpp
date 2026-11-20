@@ -18,7 +18,8 @@ Color Hex(unsigned v, unsigned char a = 255) { return {(unsigned char)(v >> 16),
 Color Fade2(Color c, float a) { c.a = (unsigned char)std::clamp(c.a * a, 0.0f, 255.0f); return c; }
 void Tri(Vector2 a, Vector2 b, Vector2 c, Color col) { DrawTriangle(a, b, c, col); DrawTriangle(a, c, b, col); }
 void Glow(Vector2 c, float r, Color col, float strength) {
-    for (int i = 0; i < 16; i++) DrawCircleV(c, r * (1 - i / 16.0f), Fade2(col, strength / 16));
+    const int layers = 12, sides = r > 60 ? 32 : r > 20 ? 20 : 12;   // big glows need rounder edges
+    for (int i = 0; i < layers; i++) DrawCircleSector(c, r * (1 - (float)i / layers), 0, 360, sides, Fade2(col, strength / layers));
 }
 
 // A character's local drawing frame: x grows forward (mirrored when facing left), y up is negative.
@@ -48,9 +49,16 @@ Color Flash(Color c, float k) { return k > 0 ? Mix(c, WHITE, std::min(1.0f, k)) 
 // top left. K() applies the current hurt flash and fade to every colour.
 namespace {
 
-const Color kInk = {18, 15, 34, 255};
+const Color kInk = {22, 20, 38, 255};   // outlines: a deep navy, softer than black against the paintings
 float gHurt = 0, gAlpha = 1;
-Color K(Color c) { return Fade2(Flash(c, gHurt), gAlpha); }
+Color gAmb = WHITE;                   // the land's light (SetLandLight)
+Color K(Color c) {
+    c = Flash(c, gHurt);
+    c.r = (unsigned char)(c.r * gAmb.r / 255);
+    c.g = (unsigned char)(c.g * gAmb.g / 255);
+    c.b = (unsigned char)(c.b * gAmb.b / 255);
+    return Fade2(c, gAlpha);
+}
 
 // Starts drawing in local units: (0,0) lands on o, and x is mirrored when sx < 0.
 // Mirrored triangles face the other way, so culling is off while they are drawn.
@@ -112,137 +120,186 @@ void LocalText(const char* s, Vector2 local, Vector2 o, float sx, float sy, floa
 } // namespace
 
 // ---------------------------------------------------------------- the hero ---
+// The Debugger: a knight in brushed steel, with a deep blue cloak trimmed in
+// gold, a red scarf, a round wooden shield with {*} painted on it, and a sword
+// whose tip is a pointer's arrowhead. About 290 units tall, lit from the top
+// left, and tinted by the land's light like everything else.
 void DrawHero(Vector2 feet, float scale, int face, float walk, float attack, float time, bool blink) {
     if (blink) return;
-    const float k = scale * 0.44f;   // the drawing is ~340 units tall; the hero is ~150 on screen
+    const float k = scale * 0.5f;   // ~145 pixels tall at scale 1
     BeginLocal(feet, face * k, k);
     auto P = [](float x, float y) { return Vector2{x, y}; };
-    auto R = [](float x, float y, float w, float h) { return Rectangle{x, y, w, h}; };
-    const float ow = 4.5f;
-    const Color armor = Hex(0x7b6cf6), armorD = Hex(0x5244d0), armorDD = Hex(0x3a2e9e), armorL = Hex(0xb9b0ff);
-    const Color steel = Hex(0xe9e7f8), steelD = Hex(0x9b97ba), gold = Hex(0xffc14d), goldD = Hex(0xc98a1c);
-    const Color cape = Hex(0x3b2575), capeD = Hex(0x271654), plume = Hex(0xff5fa2), plumeD = Hex(0xc0306f), visor = Hex(0x48e5ff);
+    const float ow = 3.2f;
+    const Color steel = Hex(0x8e98ac), steelL = Hex(0xd4dae6), steelD = Hex(0x5a647e), steelDD = Hex(0x3a4258);
+    const Color cloak = Hex(0x26385a), cloakL = Hex(0x3a5482), cloakD = Hex(0x18233c), trim = Hex(0xd9a441);
+    const Color scarf = Hex(0xb5443a), scarfL = Hex(0xe0695a), scarfD = Hex(0x7e2a26);
+    const Color leather = Hex(0x6b4a32), leatherD = Hex(0x47301f), cloth = Hex(0x39334c);
+    const Color wood = Hex(0x8a6038), woodD = Hex(0x5e3f22), gold = Hex(0xe0b04a), visor = Hex(0x48e5ff);
     float p = attack < 0 ? -1 : std::min(1.0f, attack);   // the swing, 0..1
     float ext = p < 0 ? 0 : std::sin(p * 1.5708f);       // how far the arm reaches out
-    float lean = p < 0 ? 0 : 10 * std::sin(p * 3.1416f);
-    float step = std::sin(walk) * 12, bob = std::fabs(std::sin(walk)) * 5;
-    float wave = std::sin(time * 2) * 6 - step * 0.5f;
-    auto U = [&](float x, float y) { return P(x, y + bob); };   // the upper body bobs as it walks
+    float lean = p < 0 ? 0 : 9 * std::sin(p * 3.1416f);
+    float step = std::sin(walk) * 11, bob = std::fabs(std::sin(walk)) * 4, breathe = std::sin(time * 2.2f) * 1.5f;
+    float wave = std::sin(time * 2.4f) * 7 - step * 0.6f;
+    auto U = [&](float x, float y) { return P(x, y + bob + breathe); };   // the upper body bobs and breathes
 
-    // cape, flowing behind
-    PolyO({U(-30 - lean, -236), U(16 - lean, -238), U(4, -150), P(-22, -60), P(-40, -6), P(-102 + wave, -14), P(-124 + wave, -62), U(-98, -150), U(-62, -212)}, cape, ow);
-    DrawLineEx(U(-48, -200), P(-84 + wave, -30), 7, K(capeD));
-    DrawLineEx(U(-66, -190), P(-108 + wave, -50), 6, K(capeD));
+    // the cloak, behind: from the shoulders to the knees, flowing back
+    PolyO({U(-26 - lean, -222), U(14 - lean, -224), U(6, -150), P(-14, -70), P(-30, -22), P(-86 + wave, -28), P(-104 + wave * 1.2f, -72),
+           U(-84 + wave * 0.6f, -140), U(-52, -200)}, cloak, ow);
+    Poly({U(-24 - lean, -218), U(-6 - lean, -218), P(-20, -82), P(-58 + wave, -42), U(-62 + wave * 0.4f, -140), U(-44, -196)}, cloakL);   // a lit fold
+    DrawLineEx(U(-40, -190), P(-74 + wave, -36), 5, K(cloakD));
+    DrawLineEx(U(-58, -176), P(-96 + wave * 1.2f, -64), 4, K(cloakD));
+    DrawLineEx(P(-30, -22), P(-86 + wave, -28), 5, K(trim));   // the gold hem
 
-    // back leg
-    RR(R(-34 - step, -128, 26, 60), 10, armorD, ow);
-    RR(R(-33 - step, -70, 24, 50), 9, armorD, ow);
-    OC(P(-21 - step, -72), 10, armor, ow);
-    PolyO({P(-38 - step, -24), P(-6 - step, -24), P(2 - step, -8), P(6 - step, 0), P(-40 - step, 0)}, Hex(0x2a2150), ow);
+    // back leg: dark trousers, a steel greave, a leather boot
+    OLine(P(-12 - step * 0.8f, -112), P(-16 - step, -56), 22, cloth, ow);
+    OLine(P(-16 - step, -56), P(-18 - step, -24), 20, steelD, ow);
+    PolyO({P(-32 - step, -28), P(-4 - step, -28), P(4 - step, -8), P(6 - step, 0), P(-34 - step, 0)}, leatherD, ow);
 
-    // back shoulder and the shield
-    OC(U(-36 + lean * 0.3f, -226), 20, armorD, ow);
-    PolyO({U(-104, -218), U(-14, -218), U(-10, -150), U(-58, -78), U(-108, -150)}, gold, ow);
-    Poly({U(-96, -210), U(-22, -210), U(-19, -152), U(-58, -92), U(-99, -152)}, Hex(0x7a3fe0));
-    Poly({U(-96, -210), U(-58, -210), U(-58, -92), U(-99, -152)}, Hex(0x8f55ff));   // lit half
+    // the shield on the back arm: round and wooden, a steel rim, {*} painted on it
+    Vector2 sc = U(-30 + lean * 0.3f, -160);
+    OC(sc, 46, steelD, ow);
+    DrawCircleV(sc, 39, K(wood));
+    DrawLineEx({sc.x - 37, sc.y - 13}, {sc.x + 37, sc.y - 13}, 2.5f, K(woodD));   // planks
+    DrawLineEx({sc.x - 37, sc.y + 13}, {sc.x + 37, sc.y + 13}, 2.5f, K(woodD));
+    DrawCircleSector(sc, 39, 180, 270, 16, K(Fade2(WHITE, 0.14f)));   // light, top left
+    DrawCircleSector(sc, 39, 0, 90, 16, K(Fade2(BLACK, 0.2f)));       // shade, bottom right
+    DrawRing(sc, 39, 46, 200, 250, 12, K(Fade2(steelL, 0.7f)));       // the rim catching the light
 
     // front leg
-    RR(R(4 + step, -128, 28, 60), 10, armor, ow);
-    RR(R(5 + step, -70, 26, 50), 9, armor, ow);
-    DrawRectangleRounded(R(8 + step, -124, 8, 50), 1, 8, K(Fade2(armorL, 0.55f)));
-    OC(P(18 + step, -72), 11, Hex(0xa99fff), ow);
-    DrawCircleV(P(15 + step, -75), 4, K(Fade2(WHITE, 0.6f)));
-    PolyO({P(0 + step, -24), P(32 + step, -24), P(48 + step, -10), P(50 + step, 0), P(0 + step, 0)}, Hex(0x2a2150), ow);
+    OLine(P(14 + step * 0.8f, -112), P(16 + step, -56), 24, cloth, ow);
+    OLine(P(16 + step, -56), P(18 + step, -24), 22, steel, ow);
+    DrawLineEx(P(11 + step, -54), P(12 + step, -28), 4, K(steelL));
+    OC(P(16 + step, -58), 9, steelL, 2.5f);   // the knee
+    PolyO({P(2 + step, -28), P(30 + step, -28), P(44 + step, -10), P(46 + step, 0), P(2 + step, 0)}, leather, ow);
+    DrawLineEx(P(4 + step, -20), P(30 + step, -20), 3, K(leatherD));
 
-    // tassets and body
-    PolyO({U(-42, -144), U(42, -144), U(48, -108), U(-48, -108)}, armorD, ow);
-    DrawLineEx(U(0, -142), U(0, -110), 4, K(kInk));
-    PolyO({U(-46 + lean, -242), U(46 + lean, -242), U(52 + lean * 0.5f, -200), U(40, -142), U(-40, -142), U(-52 + lean * 0.5f, -200)}, armor, ow);
-    Poly({U(-40 + lean, -236), U(-6 + lean, -236), U(-14, -160), U(-36, -170)}, Fade2(armorL, 0.5f));
-    Poly({U(30, -170), U(46 + lean * 0.5f, -200), U(38, -146), U(20, -146)}, Fade2(armorDD, 0.6f));
-    OC(U(6 + lean * 0.6f, -196), 19, Hex(0x231a46), ow * 0.8f);
-    GlowK(U(6 + lean * 0.6f, -196), 30, visor, 0.35f);
-    RR(R(-44, -150 + bob, 88, 14), 5, Hex(0x3a2a60), ow * 0.8f);
-    RR(R(-9, -153 + bob, 18, 20), 4, gold, ow * 0.8f);
+    // a mail skirt, the breastplate, the belt
+    PolyO({U(-36, -130), U(36, -130), U(42, -92), U(-42, -92)}, Hex(0x5c6274), ow);
+    for (int i = 0; i < 3; i++) DrawLineEx(U(-36 - i * 2.0f, -120 + i * 10.0f), U(36 + i * 2.0f, -120 + i * 10.0f), 2, K(Hex(0x7c8396)));
+    PolyO({U(-40 + lean, -222), U(40 + lean, -222), U(46 + lean * 0.5f, -186), U(36, -130), U(-36, -130), U(-46 + lean * 0.5f, -186)}, steel, ow);
+    Poly({U(-34 + lean, -216), U(0 + lean, -216), U(-4, -138), U(-30, -146), U(-40 + lean * 0.5f, -186)}, steelL);   // the lit side
+    Poly({U(16, -150), U(40 + lean * 0.5f, -186), U(32, -134), U(12, -134)}, steelD);                                // the shaded side
+    DrawLineEx(U(0 + lean, -218), U(-2, -134), 3, K(steelDD));                                                         // the ridge
+    RR({-40, -136 + bob + breathe, 80, 12}, 4, leather, ow * 0.8f);
+    RR({-8, -139 + bob + breathe, 16, 18}, 3, gold, ow * 0.8f);
 
-    // head: the plume, the helmet, the glowing visor
+    // the scarf: round the neck, its end flying back
+    PolyO({U(-20 + lean, -228), U(-40 + wave * 0.3f, -222), U(-78 + wave, -212 + wave * 0.4f), U(-94 + wave * 1.3f, -196 + wave * 0.6f),
+           U(-64 + wave, -200), U(-26 + lean, -214)}, scarf, ow);
+    DrawLineEx(U(-30 + lean, -222), U(-76 + wave, -208), 3, K(scarfD));
+    PolyO({U(-26 + lean, -234), U(24 + lean, -236), U(26 + lean, -216), U(-28 + lean, -212)}, scarf, ow);
+    DrawLineEx(U(-20 + lean, -231), U(20 + lean, -233), 3, K(scarfL));
+
+    // the head: a rounded great helm, a ridge on top, a narrow slit glowing faintly
     float hx = 4 + lean;
-    PolyO({U(hx - 2, -318), U(hx + 14, -326), U(hx - 18, -344), U(hx - 62, -328), U(hx - 92 + wave * 0.6f, -290), U(hx - 64, -300), U(hx - 30, -312)}, plume, ow);
-    DrawLineEx(U(hx - 16, -330), U(hx - 70 + wave * 0.6f, -300), 4, K(plumeD));
-    OC(U(hx, -280), 42, armor, ow);
-    DrawCircleV(U(hx - 14, -296), 14, K(Fade2(armorL, 0.55f)));
-    DrawCircleSector(U(hx, -280), 42, 20, 120, 20, K(Fade2(armorDD, 0.45f)));
-    RR(R(hx - 6, -294 + bob, 50, 30), 12, Hex(0x14112a), ow * 0.8f);
-    GlowK(U(hx + 20, -280), 40, visor, 0.45f);
-    DrawRectangleRounded(R(hx + 2, -284 + bob, 38, 8), 1, 8, K(visor));
-    DrawRectangleRounded(R(hx + 6, -283 + bob, 14, 3), 1, 8, K(WHITE));
-    RR(R(hx - 36, -254 + bob, 72, 10), 5, armorD, ow * 0.8f);
+    Vector2 hc = U(hx, -258);
+    PolyO({U(hx - 22, -284), U(hx - 2, -296), U(hx + 18, -288), U(hx + 4, -280)}, steelD, ow * 0.8f);   // the ridge
+    OC(hc, 30, steel, ow);
+    DrawCircleSector(hc, 30, 180, 275, 16, K(Fade2(steelL, 0.85f)));
+    DrawCircleSector(hc, 30, 20, 110, 16, K(Fade2(steelDD, 0.55f)));
+    PolyO({U(hx + 6, -278), U(hx + 34, -270), U(hx + 36, -242), U(hx + 22, -230), U(hx + 4, -234)}, steelD, ow * 0.8f);   // the face plate
+    DrawRectangleRounded({hx + 9, -265 + bob + breathe, 26, 6}, 1, 6, K(Hex(0x0e1420)));
+    GlowK(U(hx + 24, -262), 16, visor, 0.35f);
+    DrawRectangleRounded({hx + 14, -264 + bob + breathe, 16, 3}, 1, 6, K(visor));
+    for (int i = 0; i < 3; i++) DrawCircleV(U(hx + 28, -252 + i * 6.0f), 1.6f, K(steelDD));   // breathing holes
 
-    // front shoulder
-    OC(U(40 + lean, -226), 24, armor, ow);
-    DrawCircleSector(U(40 + lean, -226), 24, 180, 300, 12, K(Fade2(armorL, 0.55f)));
+    // the front shoulder
+    OC(U(34 + lean, -212), 18, steel, ow);
+    DrawCircleSector(U(34 + lean, -212), 18, 180, 300, 12, K(Fade2(steelL, 0.7f)));
 
     // the arm and the sword (its tip is a pointer's arrowhead)
-    Vector2 sh = U(40 + lean, -222);
-    Vector2 el = Add(sh, V(20 + 18 * ext, 46 - 30 * ext));
-    Vector2 hand = Add(sh, V(40 + 30 * ext, 26 - 4 * ext));
+    Vector2 sh = U(34 + lean, -206);
+    Vector2 el = Add(sh, V(18 + 16 * ext, 40 - 26 * ext));
+    Vector2 hand = Add(sh, V(36 + 28 * ext, 22 - 4 * ext));
     float ang = p < 0 ? -1.05f : -2.3f + 3.0f * ext;   // idle: up and forward; a swing comes over the head
     Vector2 d = {std::cos(ang), std::sin(ang)}, n = {-d.y, d.x};
-    if (p >= 0 && p < 1) {   // the swing's arc of light
+    if (p >= 0 && p < 1) {   // the swing's arc
         for (int i = 0; i < 10; i++) {
             float a0 = ang - 1.3f + i * 0.13f;
             Vector2 dd = {std::cos(a0), std::sin(a0)};
-            DrawLineEx(Add(hand, Mul(dd, 40)), Add(hand, Mul(dd, 175)), 16, Fade2(visor, (0.04f + i * 0.03f) * (1 - p * 0.5f)));
+            DrawLineEx(Add(hand, Mul(dd, 36)), Add(hand, Mul(dd, 160)), 14, Fade2(Mix(WHITE, visor, 0.35f), (0.03f + i * 0.025f) * (1 - p * 0.5f)));
         }
     }
-    OLine(sh, el, 22, armorD, ow);
-    OLine(el, hand, 20, armor, ow);
+    OLine(sh, el, 18, cloth, ow);
+    OLine(el, hand, 17, steelD, ow);
     auto At = [&](float along, float side) { return Add(Add(hand, Mul(d, along)), Mul(n, side)); };
-    OLine(At(-8, 0), At(-30, 0), 9, Hex(0x3a2a60), ow * 0.8f);   // grip
-    OC(At(-36, 0), 9, gold, ow * 0.8f);                           // pommel
-    PolyO({At(16, -9), At(140, -7), At(140, 7), At(16, 9)}, steel, ow);
-    Poly({At(16, -9), At(140, -7), At(140, 0), At(16, 0)}, WHITE);
-    DrawLineEx(At(24, 0), At(132, 0), 3, K(steelD));
-    GlowK(At(155, 0), 46, visor, 0.6f);
-    PolyO({At(132, -18), At(176, 0), At(132, 18), At(140, 0)}, visor, ow);
-    Poly({At(140, -8), At(170, 0), At(140, 0)}, WHITE);
-    OLine(At(12, -28), At(12, 28), 10, gold, ow * 0.8f);   // crossguard
-    DrawCircleV(At(12, 0), 6, K(goldD));
-    OC(hand, 13, armorD, ow);   // gauntlet
+    OLine(At(-8, 0), At(-28, 0), 8, leatherD, ow * 0.8f);   // grip
+    OC(At(-34, 0), 8, gold, ow * 0.8f);                     // pommel
+    PolyO({At(14, -7), At(128, -5), At(128, 5), At(14, 7)}, Hex(0xc8d0de), ow);
+    Poly({At(14, -7), At(128, -5), At(128, 0), At(14, 0)}, Fade2(WHITE, 0.8f));
+    DrawLineEx(At(22, 0), At(120, 0), 2.5f, K(steelD));
+    GlowK(At(140, 0), 30, visor, 0.4f);
+    PolyO({At(122, -15), At(160, 0), At(122, 15), At(130, 0)}, visor, ow);
+    Poly({At(130, -7), At(154, 0), At(130, 0)}, Fade2(WHITE, 0.85f));
+    OLine(At(10, -22), At(10, 22), 8, gold, ow * 0.8f);   // crossguard
+    OC(hand, 11, steelD, ow);                             // gauntlet
+
     EndLocal();
-    // the {*} on the shield and on the chest
-    LocalText("{*}", {-62, -180 + bob}, feet, face * k, k, 26, WHITE, F_MONOBOLD);
-    LocalText("{*}", {6 + lean * 0.6f, -196 + bob}, feet, face * k, k, 22, visor, F_MONOBOLD);
+    // the {*} painted on the shield, and engraved small on the chest
+    LocalText("{*}", {-30 + lean * 0.3f, -160 + bob + breathe}, feet, face * k, k, 30, Fade2(Mix(gold, gAmb, 0.15f), 0.95f), F_MONOBOLD);
+    LocalText("{*}", {0 + lean * 0.5f, -182 + bob + breathe}, feet, face * k, k, 18, Fade2(Hex(0x3a4258), 0.8f), F_MONOBOLD);
 }
 
 // -------------------------------------------------------- Off-by-One Goblin ---
+// A goblin with a sign that says <=, the comparison that runs one step too far.
 void DrawGoblin(Vector2 feet, float scale, int face, float walk, float hurt, float alpha) {
-    Frame f{feet, scale, face};
-    auto C = [&](unsigned v) { return Fade2(Flash(Hex(v), hurt), alpha); };
-    float step = std::sin(walk) * 6, bob = std::fabs(std::sin(walk)) * 3;
-    // legs
-    f.Box(-16 + step, -26, 12, 26, 0.5f, C(0x2f7a3a));
-    f.Box(4 - step, -26, 12, 26, 0.5f, C(0x2f7a3a));
-    // body with a little tunic
-    f.Ell(0, -40 + bob, 24, 22, C(0x56b84a));
-    f.Box(-22, -44 + bob, 44, 18, 0.5f, C(0x7a4a2a));
-    // head with long ears
-    f.Circle(2, -78 + bob, 24, C(0x6fd15a));
-    f.Triangle(-16, -88 + bob, -44, -110 + bob, -12, -72 + bob, C(0x6fd15a));
-    f.Triangle(18, -90 + bob, 44, -116 + bob, 20, -72 + bob, C(0x6fd15a));
-    f.Triangle(-18, -86 + bob, -36, -102 + bob, -14, -76 + bob, C(0xf29db0));
-    f.Ell(-6, -90 + bob, 8, 5, Fade2(WHITE, 0.25f * alpha));
-    // eyes and a grin
-    f.Circle(-2, -80 + bob, 6.5f, C(0xffffff));
-    f.Circle(14, -80 + bob, 6.5f, C(0xffffff));
-    f.Circle(0, -79 + bob, 3, C(0x1a1030));
-    f.Circle(16, -79 + bob, 3, C(0x1a1030));
-    f.Line(-2, -64 + bob, 16, -66 + bob, 3, C(0x1a1030));
-    // its sign: the "<=" that runs one step too far
-    f.Line(30, -20, 30, -84 + bob, 4, C(0x8a5a32));
-    f.Box(14, -104 + bob, 40, 24, 0.25f, C(0xe8d3a8));
-    Vector2 sp = f.P(face > 0 ? 34 : 34, -100 + bob);
-    TextCenter("<=", {sp.x - 20 * scale, sp.y - 2 * scale, 40 * scale, 18 * scale}, 15 * scale, Fade2(Hex(0xb02a10), alpha), F_MONOBOLD);
+    const float k = scale * 0.5f;
+    BeginLocal(feet, face * k, k);
+    gHurt = hurt;
+    gAlpha = alpha;
+    const float ow = 3.2f;
+    const Color skin = Hex(0x7fa54c), skinD = Hex(0x55762f), skinL = Hex(0xbad77e), tunic = Hex(0x7a5232), tunicD = Hex(0x553820);
+    const Color wood = Hex(0x8a6038), board = Hex(0xd9c08a), eye = Hex(0xffe27a);
+    float step = std::sin(walk) * 9, bob = std::fabs(std::sin(walk)) * 5;
+    auto P = [](float x, float y) { return Vector2{x, y}; };
+    auto U = [&](float x, float y) { return P(x, y + bob); };
+    // the sign, held up behind it
+    OLine(U(60, -30), U(60, -196), 7, wood, ow);
+    RR({28, -232 + bob, 66, 40}, 5, board, ow);
+    DrawLineEx(U(32, -220), U(90, -220), 2, K(Fade2(Hex(0x9a7a48), 0.7f)));
+    // legs and feet
+    OLine(P(-14 - step, -58), P(-16 - step, -16), 15, skinD, ow);
+    OLine(P(14 + step, -58), P(16 + step, -16), 15, skin, ow);
+    PolyO({P(-30 - step, -18), P(-4 - step, -18), P(2 - step, 0), P(-32 - step, 0)}, tunicD, ow);
+    PolyO({P(0 + step, -18), P(26 + step, -18), P(34 + step, 0), P(0 + step, 0)}, tunicD, ow);
+    // a round body in a ragged tunic
+    OC(U(0, -86), 40, skin, ow);
+    PolyO({U(-40, -94), U(40, -94), U(44, -56), U(30, -48), U(18, -56), U(4, -46), U(-10, -56), U(-26, -46), U(-44, -56)}, tunic, ow);
+    DrawLineEx(U(-38, -84), U(38, -84), 4, K(tunicD));   // a rope belt
+    // the arm holding the sign
+    OLine(U(30, -90), U(54, -100), 12, skin, ow);
+    OC(U(58, -102), 8, skinD, ow * 0.8f);
+    // the head: long ears, a big nose, yellow eyes, a crooked grin
+    PolyO({U(-26, -168), U(-74, -196), U(-34, -144)}, skin, ow);
+    PolyO({U(28, -170), U(70, -206), U(36, -146)}, skin, ow);
+    Poly({U(-32, -164), U(-62, -186), U(-36, -150)}, Hex(0xd88a8a));
+    OC(U(2, -152), 38, skin, ow);
+    DrawCircleSector(U(2, -152), 38, 180, 275, 16, K(Fade2(skinL, 0.8f)));
+    DrawCircleSector(U(2, -152), 38, 20, 110, 16, K(Fade2(skinD, 0.6f)));
+    PolyO({U(22, -152), U(46, -140), U(24, -132)}, skinD, ow * 0.8f);   // the nose
+    for (int i = 0; i < 2; i++) {
+        Vector2 e = U((float)(i == 0 ? -10 : 18), -164);
+        OC(e, 8, eye, 2.5f);
+        DrawCircleV({e.x + 2.5f, e.y + 1}, 3.5f, K(kInk));
+    }
+    PolyO({U(-14, -130), U(24, -134), U(18, -122), U(-8, -120)}, Hex(0x3a1a14), ow * 0.7f);   // the grin
+    Tri(U(-4, -130), U(2, -131), U(-1, -124), K(WHITE));
+    Tri(U(10, -132), U(16, -133), U(13, -126), K(WHITE));
+    EndLocal();
+    LocalText("<=", {61, -212 + bob}, feet, face * k, k, 30, Fade2(Hex(0x8a2a10), alpha), F_MONOBOLD);
+}
+
+// ------------------------------------------------- light and ground shadow ---
+void SetLandLight(int which) {
+    // the land's light on everything drawn: a gentle tint
+    static const unsigned amb[6] = {0xfff4e4, 0xffe8cd, 0xdde8ff, 0xd2ecd8, 0xe6dfff, 0xf2d8ff};
+    if (which < 0 || which > 5) { gAmb = WHITE; return; }
+    gAmb = Hex(amb[which]);
+}
+
+void DrawShadow(Vector2 ground, float width, float lift) {
+    float k = std::clamp(1 - lift, 0.25f, 1.0f);
+    DrawEllipse((int)ground.x, (int)ground.y + 2, width * (0.55f + 0.45f * k), 7 + 3 * k, Fade2(Hex(0x0a0814), 0.38f * k));
 }
 
 // ---------------------------------------------------- Infinite Loop Serpent ---
@@ -725,35 +782,464 @@ void DrawBolt(Vector2 at, Vector2 dir, float time) {
     (void)time;
 }
 
-// ------------------------------------------------------------------ story ---
-void DrawAda(Vector2 feet, float s, float time) {
-    Frame f{feet, s, 1};
-    float sway = std::sin(time * 1.5f) * 2;
-    // long hair behind
-    f.Box(-30, -150, 60, 96, 0.6f, Hex(0x3a2a6b));
-    // dress
-    f.Triangle(-50, 0, 50, 0, 0, -100, Hex(0x2bb5a8));
-    f.Triangle(-50, 0, 0, -100, -18 + sway, -100, Hex(0x2bb5a8));
-    f.Box(-22, -108, 44, 40, 0.5f, Hex(0x35c9bb));
-    f.Box(-50, -8, 100, 8, 0.6f, Hex(0x1f8f85));
-    // head, face, crown with { }
-    f.Circle(0, -130, 24, Hex(0xf6d2b8));
-    f.Box(-26, -158, 52, 18, 0.6f, Hex(0x3a2a6b));
-    f.Circle(-8, -130, 3, Hex(0x2a1d45));
-    f.Circle(8, -130, 3, Hex(0x2a1d45));
-    f.Line(-6, -119, 6, -119, 2.5f, Hex(0xc0566a));
-    f.Box(-20, -172, 40, 14, 0.3f, Hex(0xffc14d));
-    Vector2 cr = f.P(0, -170);
-    TextCenter("{ }", {cr.x - 30 * s, cr.y - 2 * s, 60 * s, 14 * s}, 12 * s, Hex(0x7a4a00), F_MONOBOLD);
+// --------------------------------------------------------------- Leak Slime ---
+// A slime that leaks memory: it drips puddles of bytes and grows with every
+// leak. size: 1 at first, bigger as it leaks. bytes: what it has malloc'd.
+namespace {
+// A slime's body: a dome with a flat, dripping base. In local units, ~130 wide.
+void SlimeBody(Color fill, Color dark, Color light, float time, float wob) {
+    std::vector<Vector2> body;
+    for (int i = 0; i <= 14; i++) {   // the dome, left to right over the top
+        float ang = PI + PI * i / 14.0f;
+        float r = 66 + std::sin(time * 4 + i * 0.9f) * wob;
+        body.push_back({std::cos(ang) * r, -46 + std::sin(ang) * (r - 6)});
+    }
+    body.push_back({64, -10});
+    body.push_back({46, 0});
+    body.push_back({-46, 0});
+    body.push_back({-64, -10});
+    for (size_t i = 0; i < body.size(); i++) { DrawLineEx(body[i], body[(i + 1) % body.size()], 11, K(kInk)); DrawCircleV(body[i], 5.5f, K(kInk)); }
+    for (size_t i = 0; i < body.size(); i++) Tri({0, -40}, body[i], body[(i + 1) % body.size()], K(fill));
+    DrawCircleSector({0, -46}, 60, 20, 100, 16, K(Fade2(dark, 0.55f)));   // shade, lower right
+    DrawEllipse(-24, -84, 18, 11, K(Fade2(light, 0.85f)));               // the shine
+    DrawCircleV({-6, -94}, 5, K(Fade2(WHITE, 0.9f)));
+    // drips at the base
+    for (int i = 0; i < 3; i++) {
+        float x = -40.0f + i * 40, d = 6 + 6 * (0.5f + 0.5f * std::sin(time * 2.3f + i * 2.1f));
+        DrawEllipse((int)x, (int)(d * 0.5f), 7, d, K(fill));
+    }
+}
+} // namespace
+
+void DrawSlime(Vector2 feet, float scale, int face, float hop, float size, float hurt, float alpha, int bytes, float time) {
+    const float k = scale * 0.42f * size;
+    float sq = 0.08f * std::sin(time * 6) - 0.12f * hop;   // wobbles; flattens before a hop
+    BeginLocal(feet, face * k * (1 + sq), k * (1 - sq));
+    gHurt = hurt;
+    gAlpha = alpha;
+    const Color slime = Hex(0x7be36b), slimeD = Hex(0x2f8a4c), slimeL = Hex(0xd8ffc8);
+    GlowK({0, -50}, 120, Hex(0x7be36b), 0.25f);
+    SlimeBody(slime, slimeD, slimeL, time, 2.5f);
+    // bits floating inside it: the memory it leaked
+    for (int i = 0; i < 5; i++) {
+        float x = -36 + i * 18.0f + std::sin(time * 1.3f + i) * 5, y = -30 - std::fmod(time * 14 + i * 13, 50.0f);
+        DrawRectangleRec({x, y, 7, 7}, K(Fade2(i % 2 ? Hex(0x2f8a4c) : Hex(0xffffff), 0.55f)));
+    }
+    // eyes (looking forward) and a little open mouth
+    for (int i = 0; i < 2; i++) {
+        Vector2 e = {(float)(i == 0 ? 6 : 34), -62};
+        OC(e, 10, WHITE, 3.5f);
+        DrawCircleV({e.x + 3, e.y + 1}, 5, K(kInk));
+    }
+    DrawEllipse(22, -38, 9, 6, K(Hex(0x1b4a2a)));
+    EndLocal();
+    if (alpha < 0.05f) return;
+    // its badge: how much it has malloc'd (and never freed)
+    std::string s = "malloc(" + std::to_string(bytes) + ")";
+    float px = std::round(std::max(11.0f, 13 * scale));
+    Vector2 m = Measure(s, px, F_MONOBOLD);
+    Vector2 b = {feet.x, feet.y - (118 * k + 14) * (1 - sq) - px};
+    Rectangle pill = {b.x - m.x / 2 - 7, b.y - 3, m.x + 14, px + 7};
+    DrawRectangleRounded(pill, 0.5f, 8, Fade2(Hex(0x0e2416), 0.85f * alpha));
+    DrawRectangleRoundedLinesEx(pill, 0.5f, 8, 1.5f, Fade2(Hex(0x7be36b), alpha));
+    Text(s, b.x - m.x / 2, b.y, px, Fade2(Hex(0xc8ffb8), alpha), F_MONOBOLD);
 }
 
-// The SEGFAULT: a giant of broken memory blocks with a crashed monitor for a
-// head, a snapped pointer for a spear and a linked list dragged like a chain.
-// Drawn in units around (600, 720); s is the size on screen.
-void DrawSegfault(Vector2 c, float s, float time) {
+// A puddle of leaked bytes on the ground: stepping in it hurts. life: 1 new .. 0 gone.
+void DrawPuddle(float x, float life, float time) {
+    float a = std::min(1.0f, life * 3);
+    float w = 42 * (0.6f + 0.4f * std::min(1.0f, (1 - life) * 8));
+    DrawEllipse((int)x, (int)kGround + 2, w + 4, 11, Fade2(kInk, 0.5f * a));
+    DrawEllipse((int)x, (int)kGround + 1, w, 8, Fade2(Hex(0x5bd14c), 0.9f * a));
+    DrawEllipse((int)x - 10, (int)kGround - 1, w * 0.4f, 3, Fade2(Hex(0xd8ffc8), 0.7f * a));
+    for (int i = 0; i < 3; i++) {   // bubbles popping
+        float u = std::fmod(time * 1.5f + i * 0.33f + x * 0.01f, 1.0f);
+        DrawCircleLines((int)(x - 20 + i * 20), (int)(kGround - 4 - u * 14), 3 + u * 2, Fade2(Hex(0xc8ffb8), a * (1 - u)));
+    }
+    Text("0x3F", x - 15, kGround - 26, 12, Fade2(Hex(0x9cf08a), 0.8f * a), F_MONOBOLD);
+}
+
+// ------------------------------------------------------------ the Leak Lord ---
+// A king of slimes, swollen with every block that was malloc'd and never freed.
+// mouth: 0 closed .. 1 wide open (spitting). melt: 0 whole .. 1 melted away.
+void DrawLeakLord(Vector2 feet, float scale, float time, float mouth, float hurt, float alpha, float melt) {
+    const float k = scale * 0.95f;
+    float breathe = 0.03f * std::sin(time * 1.8f) * (1 - melt);
+    BeginLocal(feet, k * (1 + breathe + melt * 0.6f), k * (1 - breathe - melt * 0.75f));
+    gHurt = hurt;
+    gAlpha = alpha;
+    const Color slime = Hex(0x56c45a), slimeD = Hex(0x23703a), slimeL = Hex(0xc8ffb8), gold = Hex(0xffc14d), goldD = Hex(0xc98a1c);
+    GlowK({0, -150}, 330, Hex(0x7be36b), 0.22f);
+    // the body: a huge dome (the slime body, scaled up 2.4x)
+    rlPushMatrix();
+    rlScalef(2.4f, 2.4f, 1);
+    SlimeBody(slime, slimeD, slimeL, time * 0.7f, 3.5f);
+    rlPopMatrix();
+    // the blocks it never freed, drifting inside it
+    struct Blk { float x, y, w; const char* label; };
+    const Blk blks[4] = {{-124, -54, 92, "malloc(64)"}, {-14, -40, 104, "malloc(128)"}, {60, -100, 84, "new int[8]"}, {58, -160, 80, "malloc(8)"}};
+    for (int i = 0; i < 4; i++) {
+        float dy = std::sin(time * 0.9f + i * 1.7f) * 8;
+        Rectangle r = {blks[i].x, blks[i].y + dy, blks[i].w, 26};
+        DrawRectangleRounded(r, 0.3f, 6, K(Fade2(Hex(0x1b4a2a), 0.45f)));
+        DrawRectangleRoundedLinesEx(r, 0.3f, 6, 2, K(Fade2(Hex(0xd8ffc8), 0.6f)));
+    }
+    // the crown, a little crooked
+    PolyO({{-56, -232}, {-62, -282}, {-34, -256}, {-8, -296}, {16, -258}, {44, -290}, {52, -234}}, gold, 5);
+    Poly({{-50, -238}, {-52, -268}, {-34, -250}, {-8, -282}, {-8, -244}}, Hex(0xffe08a));
+    OC({-8, -262}, 9, Hex(0xff3d5a), 3.5f);
+    DrawLineEx({-58, -238}, {52, -238}, 5, K(goldD));
+    // the face: heavy-lidded eyes, a wide mouth that opens to spit
+    for (int i = 0; i < 2; i++) {
+        Vector2 e = {(float)(i == 0 ? -64 : 4), -176};
+        OC(e, 22, WHITE, 4.5f);
+        DrawCircleV({e.x - 6, e.y + 4}, 11, K(kInk));
+        DrawCircleV({e.x - 9, e.y + 1}, 3.5f, K(WHITE));
+        DrawRectangleRec({e.x - 26, e.y - 26, 52, 18}, K(slime));   // the lid
+        DrawLineEx({e.x - 24, e.y - 8}, {e.x + 22, e.y - 10}, 5, K(kInk));
+    }
+    float mo = 10 + 46 * mouth;
+    PolyO({{-92, -116}, {-30, -124 + mouth * 4}, {30, -116}, {20, -116 + mo}, {-40, -110 + mo * 1.15f}, {-86, -112 + mo * 0.6f}}, Hex(0x1b3a22), 5);
+    for (int i = 0; i < 4; i++) Tri({-78.0f + i * 28, -118}, {-68.0f + i * 28, -118}, {-73.0f + i * 28, -104}, K(WHITE));
+    EndLocal();
+    if (alpha < 0.05f) return;
+    float sx = k * (1 + breathe + melt * 0.6f), sy = k * (1 - breathe - melt * 0.75f);
+    for (int i = 0; i < 4; i++) {
+        float dy = std::sin(time * 0.9f + i * 1.7f) * 8;
+        LocalText(blks[i].label, {blks[i].x + blks[i].w / 2, blks[i].y + dy + 13}, feet, sx, sy, 15, Fade2(Hex(0xe6ffe0), alpha * 0.9f), F_MONOBOLD);
+    }
+}
+
+// A blob it spits: a ball of leaked memory, arcing through the air.
+void DrawBlob(Vector2 at, float time) {
+    Glow(at, 34, Hex(0x7be36b), 0.5f);
+    DrawCircleV(at, 17, kInk);
+    DrawCircleV(at, 13, Hex(0x7be36b));
+    DrawCircleV({at.x - 4, at.y - 5}, 4, Hex(0xe6ffe0));
+    DrawRectangleRec({at.x + 2, at.y + 1, 5, 5}, Fade2(Hex(0x1b4a2a), 0.7f));
+    (void)time;
+}
+
+// --------------------------------------------------------------- Lost Node ---
+// A list node that walked off on its own: a box [data|next] on two legs, with
+// eyes peeking over its rim. Nodes walk in lines, each one's next pointing at
+// the one behind it (the game draws those arrows with DrawLink).
+namespace {
+const float kNodeK = 0.45f;   // its drawing scale
+const Color kNodeBox = Hex(0x2f9db0), kNodeBoxD = Hex(0x1d6c7c), kNodePaper = Hex(0xeef7f4), kLink = Hex(0xff9e4a);
+}
+
+Vector2 NodeNextDot(Vector2 feet, float scale, int face) {
+    float k = scale * kNodeK;
+    return {feet.x + face * 36 * k, feet.y - 84 * k};
+}
+Vector2 NodeInlet(Vector2 feet, float scale, int face) {
+    float k = scale * kNodeK;
+    return {feet.x - face * 66 * k, feet.y - 84 * k};
+}
+
+void DrawNode(Vector2 feet, float scale, int face, float walk, float hurt, float alpha, int value, bool head, bool tail, float time) {
+    const float k = scale * kNodeK;
+    float step = std::sin(walk) * 10, bob = std::fabs(std::sin(walk)) * 4;
+    BeginLocal(feet, face * k, k);
+    gHurt = hurt;
+    gAlpha = alpha;
+    const float ow = 3.2f;
+    // legs
+    OLine({-26 - step, -44}, {-28 - step, -8}, 10, kNodeBoxD, ow);
+    OLine({22 + step, -44}, {24 + step, -8}, 10, kNodeBox, ow);
+    PolyO({{-42 - step, -12}, {-16 - step, -12}, {-12 - step, 0}, {-44 - step, 0}}, Hex(0x2a2a3a), ow);
+    PolyO({{10 + step, -12}, {36 + step, -12}, {40 + step, 0}, {8 + step, 0}}, Hex(0x2a2a3a), ow);
+    // eyes peeking over the rim of the data box
+    for (int i = 0; i < 2; i++) {
+        Vector2 e = {-36.0f + i * 26, -126 + bob};
+        OC(e, 11, WHITE, ow * 0.8f);
+        DrawCircleV({e.x + 4, e.y + 2}, 5, K(kInk));
+        DrawCircleV({e.x + 2, e.y}, 1.6f, K(WHITE));
+    }
+    // the box: data on the left, next on the right
+    RR({-64, -120 + bob, 120, 76}, 10, kNodeBox, ow);
+    DrawRectangleRounded({-56, -112 + bob, 66, 60}, 0.2f, 6, K(kNodePaper));
+    DrawRectangleRounded({18, -112 + bob, 30, 60}, 0.2f, 6, K(Mix(kNodePaper, kNodeBox, 0.25f)));
+    DrawRectangleRounded({-60, -118 + bob, 112, 8}, 1, 6, K(Fade2(WHITE, 0.25f)));   // the lit top edge
+    DrawCircleV({33, -82 + bob}, 6, K(kLink));                                        // the next pointer
+    if (tail) {   // nothing after it: next = NULL
+        DrawLineEx({33, -82 + bob}, {33, -30}, 3, K(kLink));
+        DrawLineEx({24, -30}, {42, -30}, 3, K(kLink));
+        DrawLineEx({27, -24}, {39, -24}, 3, K(kLink));
+        DrawLineEx({30, -18}, {36, -18}, 3, K(kLink));
+    }
+    EndLocal();
+    if (alpha < 0.05f) return;
+    LocalText(std::to_string(value).c_str(), {-23, -82 + bob}, feet, face * k, k, 34, Fade2(Hex(0x1d4a56), alpha), F_MONOBOLD);
+    if (head) {   // the first of its line
+        float px = std::round(std::max(11.0f, 13 * scale));
+        Vector2 m = Measure("head", px, F_MONOBOLD);
+        Vector2 b = {feet.x, feet.y - 152 * k - px};
+        Rectangle pill = {b.x - m.x / 2 - 8, b.y - 3, m.x + 16, px + 7};
+        DrawRectangleRounded(pill, 0.5f, 8, Fade2(Hex(0x14282e), 0.85f * alpha));
+        DrawRectangleRoundedLinesEx(pill, 0.5f, 8, 1.5f, Fade2(kLink, alpha));
+        Text("head", b.x - m.x / 2, b.y, px, Fade2(Hex(0xffd6b0), alpha), F_MONOBOLD);
+    }
+}
+
+// An arrow from one node's next to the next node, sagging a little like a cable.
+void DrawLink(Vector2 from, Vector2 to, float alpha, float time) {
+    Vector2 mid = {(from.x + to.x) / 2, std::max(from.y, to.y) + 14 + std::sin(time * 3 + from.x * 0.01f) * 3};
+    Color c = Fade2(kLink, alpha), ink = Fade2(kInk, 0.7f * alpha);
+    DrawSplineSegmentBezierQuadratic(from, mid, to, 6, ink);
+    DrawSplineSegmentBezierQuadratic(from, mid, to, 3, c);
+    Vector2 d = {to.x - mid.x, to.y - mid.y};
+    float l = std::sqrt(d.x * d.x + d.y * d.y) + 1e-4f;
+    d = {d.x / l, d.y / l};
+    Vector2 n = {-d.y, d.x};
+    Tri(to, Add(Add(to, Mul(d, -12)), Mul(n, 7)), Add(Add(to, Mul(d, -12)), Mul(n, -7)), c);
+}
+
+// ------------------------------------------------------- the Tangled List ---
+// A spider made of a linked list: its body is a huge [HEAD|next] node, its legs
+// are chains of little nodes, and a list hangs from its next down to NULL.
+// pose: 0 standing .. 1 reared up (attacking). fall: 0 .. 1 coming undone.
+void DrawTangledList(Vector2 feet, float scale, float time, float pose, float hurt, float alpha, float fall) {
+    const float k = scale * 0.8f;
+    BeginLocal(feet, k, k);
+    gHurt = hurt;
+    gAlpha = alpha;
+    const float ow = 4;
+    const float rise = -30 * pose + fall * 260, sway = std::sin(time * 1.4f) * 8 * (1 - fall);
+    // the legs: chains of nodes from the body down to the ground, bent like a spider's
+    struct Leg { float hipX, kneeX, kneeY, footX; };
+    const Leg legs[4] = {{-110, -270, -420, -290}, {-60, -160, -470, -160}, {60, 160, -470, 160}, {110, 270, -420, 290}};
+    for (int i = 0; i < 4; i++) {
+        float walk = std::sin(time * 2.2f + i * 1.6f) * 14 * (1 - fall);
+        Vector2 hip = {legs[i].hipX + sway, -280 + rise}, knee = {legs[i].kneeX + walk, legs[i].kneeY + rise * 0.6f}, foot = {legs[i].footX + walk * 0.5f, 0};
+        if (fall > 0) { knee = Add(knee, {legs[i].kneeX * fall * 0.6f, -legs[i].kneeY * fall * 0.8f}); foot.x += legs[i].footX * fall * 0.5f; }
+        Vector2 pts[3] = {hip, knee, foot};
+        for (int s = 0; s < 2; s++) {   // a link along each segment, then nodes on it
+            DrawLineEx(pts[s], pts[s + 1], 16, K(kInk));
+            DrawLineEx(pts[s], pts[s + 1], 8, K(kLink));
+            for (int j = 1; j <= 2; j++) {
+                Vector2 c = Add(pts[s], Mul({pts[s + 1].x - pts[s].x, pts[s + 1].y - pts[s].y}, j / 3.0f));
+                RR({c.x - 28, c.y - 19, 56, 38}, 7, i % 2 ? kNodeBox : kNodeBoxD, 3.5f);
+                DrawRectangleRounded({c.x - 22, c.y - 13, 30, 26}, 0.2f, 6, K(Mix(kNodePaper, kNodeBox, 0.2f)));
+                DrawRectangle((int)c.x + 9, (int)c.y - 19, 3, 38, K(kInk));
+                DrawCircleV({c.x + 18, c.y}, 5, K(kLink));
+            }
+        }
+        OC(knee, 18, kNodeBoxD, 3.5f);
+        DrawCircleV({knee.x - 5, knee.y - 5}, 6, K(Fade2(WHITE, 0.3f)));
+        PolyO({{foot.x - 22, foot.y - 14}, {foot.x + 22, foot.y - 14}, {foot.x + 14, foot.y}, {foot.x - 14, foot.y}}, Hex(0x2a2a3a), 3);
+    }
+    // the list hanging from its next pointer: [7] -> [3] -> NULL, swinging
+    Vector2 from = {96 + sway, -300 + rise};
+    for (int j = 0; j < 2; j++) {
+        float swing = std::sin(time * 1.8f + j) * (16 + j * 10) * (1 - fall);
+        Vector2 at = {130.0f + j * 30 + swing + sway, -190.0f + j * 80 + rise + fall * 120};
+        DrawLineEx(from, at, 8, K(kInk));
+        DrawLineEx(from, at, 3.5f, K(kLink));
+        RR({at.x - 34, at.y, 68, 44}, 7, kNodeBox, 3);
+        DrawRectangleRounded({at.x - 28, at.y + 6, 36, 32}, 0.2f, 6, K(kNodePaper));
+        DrawCircleV({at.x + 22, at.y + 22}, 5, K(kLink));
+        from = {at.x + 22, at.y + 22};
+    }
+    DrawLineEx(from, Add(from, {0, 50}), 3.5f, K(kLink));   // ... and the last next is NULL
+    // the body: a huge node, HEAD in its data, angry eyes, its next glowing
+    const float bx = -150 + sway, by = -380 + rise;
+    GlowK({bx + 150, by + 80}, 260, Hex(0x5fd0e0), 0.18f * (1 - fall));
+    RR({bx, by, 300, 150}, 18, kNodeBox, ow);
+    DrawRectangleRounded({bx + 12, by + 12, 190, 126}, 0.15f, 8, K(kNodePaper));
+    DrawRectangleRounded({bx + 216, by + 12, 72, 126}, 0.15f, 8, K(Mix(kNodePaper, kNodeBox, 0.3f)));
+    DrawRectangleRounded({bx + 8, by + 6, 284, 12}, 1, 6, K(Fade2(WHITE, 0.25f)));
+    for (int i = 0; i < 2; i++) {   // the eyes, glaring out of the data box
+        Vector2 e = {bx + 62 + i * 70.0f, by + 56};
+        OC(e, 22, WHITE, 3.5f);
+        DrawCircleV({e.x - 6 + 4 * std::sin(time), e.y + 4}, 11, K(kInk));
+        DrawLineEx({e.x - 26, e.y - 30 + i * 10}, {e.x + 24, e.y - 22 - i * 10}, 7, K(kInk));   // brows, cross
+    }
+    GlowK({bx + 252, by + 75}, 40, kLink, 0.6f);
+    OC({bx + 252, by + 75}, 13, kLink, 3.5f);
+    EndLocal();
+    if (alpha < 0.05f) return;
+    LocalText("HEAD", {bx + 107, by + 118}, feet, k, k, 30, Fade2(Hex(0x1d4a56), alpha), F_MONOBOLD);
+    LocalText("7", {130.0f + std::sin(time * 1.8f) * 16 * (1 - fall) + sway - 10, -168.0f + rise + fall * 120}, feet, k, k, 24, Fade2(Hex(0x1d4a56), alpha), F_MONOBOLD);
+    LocalText("3", {160.0f + std::sin(time * 1.8f + 1) * 26 * (1 - fall) + sway - 10, -88.0f + rise + fall * 120}, feet, k, k, 24, Fade2(Hex(0x1d4a56), alpha), F_MONOBOLD);
+    LocalText("NULL", {from.x, from.y + 64}, feet, k, k, 22, Fade2(Hex(0xff8a9c), alpha), F_MONOBOLD);
+}
+
+// A node lying on the street for the Tangled List's traverse: lit when p is
+// about to land on it (warn 0..1), struck when it just has.
+void DrawListTile(float x, int value, float warn, float struck, float time) {
+    Rectangle r = {x - 46, kGround - 30, 92, 30};
+    Color box = Mix(Hex(0x2f9db0), Hex(0xff5c7a), std::max(warn * (0.6f + 0.4f * std::sin(time * 20)), struck));
+    DrawRectangleRounded({r.x - 3, r.y - 3, r.width + 6, r.height + 6}, 0.3f, 6, kInk);
+    DrawRectangleRounded(r, 0.3f, 6, box);
+    DrawRectangleRounded({r.x + 5, r.y + 4, 52, 22}, 0.25f, 6, Hex(0xeef7f4));
+    TextCenter(std::to_string(value), {r.x + 5, r.y + 4, 52, 22}, 15, Hex(0x1d4a56), F_MONOBOLD);
+    DrawCircleV({r.x + 74, r.y + 15}, 5, Hex(0xff9e4a));
+}
+
+// The traversal's pointer: an arrow labelled p, pointing down at a node.
+void DrawCursorP(Vector2 tip, float time) {
+    float b = std::sin(time * 10) * 3;
+    Vector2 t = {tip.x, tip.y + b};
+    Glow(t, 36, Hex(0xffc14d), 0.4f);
+    Tri({t.x, t.y}, {t.x - 16, t.y - 22}, {t.x + 16, t.y - 22}, kInk);
+    Tri({t.x, t.y - 4}, {t.x - 11, t.y - 20}, {t.x + 11, t.y - 20}, Hex(0xffc14d));
+    DrawLineEx({t.x, t.y - 22}, {t.x, t.y - 52}, 6, kInk);
+    DrawLineEx({t.x, t.y - 22}, {t.x, t.y - 50}, 3, Hex(0xffc14d));
+    Rectangle pill = {t.x + 8, t.y - 68, 28, 26};
+    DrawRectangleRounded(pill, 0.5f, 8, Fade2(Hex(0x1e1c26), 0.9f));
+    DrawRectangleRoundedLinesEx(pill, 0.5f, 8, 1.5f, Hex(0xffc14d));
+    TextCenter("p", pill, 20, Hex(0xffe08a), F_MONOBOLD);
+}
+
+// The whip: a chain of nodes sliding along the street. Jump it.
+void DrawChainWhip(Vector2 at, float time) {
+    for (int i = 0; i < 4; i++) {
+        float x = at.x + i * 46, y = at.y - 18 - std::fabs(std::sin(time * 12 + i)) * 10;
+        if (i < 3) { DrawLineEx({x + 14, y}, {x + 46 - 16, at.y - 18}, 5, kInk); DrawLineEx({x + 14, y}, {x + 30, at.y - 18}, 2.5f, Hex(0xff9e4a)); }
+        DrawRectangleRounded({x - 19, y - 15, 38, 30}, 0.3f, 6, kInk);
+        DrawRectangleRounded({x - 16, y - 12, 32, 24}, 0.3f, 6, i == 0 ? Hex(0xff5c7a) : Hex(0x2f9db0));
+        DrawCircleV({x + 8, y}, 3.5f, Hex(0xff9e4a));
+    }
+    for (int i = 0; i < 5; i++)   // sparks off the cobbles
+        DrawCircleV({at.x + 160 + i * 8.0f, at.y - 4 - std::fmod(time * 90 + i * 13, 22.0f)}, 2.5f, Fade2(Hex(0xffe08a), 0.7f - i * 0.12f));
+}
+
+// ------------------------------------------------------------------ story ---
+// ------------------------------------------------------------ Dangling Bat ---
+// A bat still pointing at memory that was already freed: a dashed pointer
+// hangs from it to a crossed-out block. flap: phase of the wing beat.
+void DrawBat(Vector2 at, float scale, int face, float flap, float hurt, float alpha, float time) {
+    const float k = scale * 0.45f;
+    BeginLocal(at, face * k, k);
+    gHurt = hurt;
+    gAlpha = alpha;
+    const float ow = 3.2f;
+    const Color fur = Hex(0x4a2f6e), furD = Hex(0x2e1c48), furL = Hex(0x7a58a8), wing = Hex(0x3a2458), wingM = Hex(0x6a3f8a), eye = Hex(0xff4d6d);
+    float w = std::sin(flap) * 40;
+    // the dangling pointer: a dashed line down to a block that was freed
+    for (int i = 0; i < 6; i++) DrawLineEx({4.0f + i * 6, -30.0f + i * 14}, {7.0f + i * 6, -22.0f + i * 14}, 4, K(Hex(0xffc14d)));
+    RR({18, 54, 66, 36}, 6, Hex(0x5a5068), 3);
+    DrawLineEx({22, 58}, {80, 86}, 4, K(Hex(0xff5c7a)));
+    DrawLineEx({80, 58}, {22, 86}, 4, K(Hex(0xff5c7a)));
+    // wings: a membrane between three long fingers
+    for (int side = -1; side <= 1; side += 2) {
+        Vector2 sh = {side * 18.0f, -60};
+        Vector2 tip1 = {side * 120.0f, -110 - w}, tip2 = {side * 140.0f, -50 - w * 0.6f}, tip3 = {side * 90.0f, -10 - w * 0.2f};
+        PolyO({sh, tip1, {side * 96.0f, -70 - w * 0.7f}, tip2, {side * 80.0f, -36 - w * 0.4f}, tip3, {side * 20.0f, -36}}, side < 0 ? wing : wingM, ow);
+        DrawLineEx(sh, tip1, 3, K(furD));
+        DrawLineEx(sh, tip2, 3, K(furD));
+    }
+    // the body, the ears, the face
+    OC({0, -52}, 30, fur, ow);
+    DrawCircleSector({0, -52}, 30, 180, 275, 12, K(Fade2(furL, 0.7f)));
+    PolyO({{-22, -74}, {-30, -112}, {-6, -80}}, fur, ow);
+    PolyO({{22, -74}, {30, -112}, {6, -80}}, fur, ow);
+    for (int i = 0; i < 2; i++) {
+        Vector2 e = {(float)(i == 0 ? -10 : 12), -58};
+        GlowK(e, 14, eye, 0.6f);
+        OC(e, 6, eye, 2);
+    }
+    Tri({-6, -40}, {-1, -40}, {-3.5f, -31}, K(WHITE));
+    Tri({4, -40}, {9, -40}, {6.5f, -31}, K(WHITE));
+    EndLocal();
+    if (alpha > 0.05f) LocalText("freed", {51, 104}, at, face * k, k, 22, Fade2(Hex(0xffb3c0), alpha), F_MONOBOLD);
+    (void)time;
+}
+
+// ---------------------------------------------------- the SEGFAULT's attacks ---
+// Where an error column will fall: a red mark that tightens as it comes.
+void DrawBeamMark(float x, float warn, float time) {
+    float w = 50 - 26 * warn, pulse = 0.5f + 0.5f * std::sin(time * 24);
+    DrawEllipse((int)x, (int)kGround + 3, w + 6, 10, Fade2(Hex(0x2a0a14), 0.45f));
+    DrawEllipseLines((int)x, (int)kGround + 3, w, 8, Fade2(Hex(0xff3d5a), 0.5f + 0.5f * pulse));
+    DrawLineEx({x - 12, kGround - 10}, {x + 12, kGround + 14}, 4, Fade2(Hex(0xff3d5a), 0.4f + 0.6f * warn));
+    DrawLineEx({x + 12, kGround - 10}, {x - 12, kGround + 14}, 4, Fade2(Hex(0xff3d5a), 0.4f + 0.6f * warn));
+    DrawRectangle((int)x - 1, 0, 2, (int)kGround, Fade2(Hex(0xff3d5a), 0.12f * warn));   // a faint line up to the sky
+}
+
+// The column itself: a beam of crash, the error code running down it. life 1 .. 0.
+void DrawBeam(float x, float life, float time) {
+    float w = 34 * std::min(1.0f, life * 2.5f);
+    DrawRectangle((int)(x - w * 1.8f), 0, (int)(w * 3.6f), (int)kGround, Fade2(Hex(0xff3d5a), 0.18f * life));
+    DrawRectangle((int)(x - w / 2), 0, (int)w, (int)kGround, Fade2(Hex(0xff6a80), 0.85f * life));
+    DrawRectangle((int)(x - w / 6), 0, (int)(w / 3), (int)kGround, Fade2(WHITE, 0.9f * life));
+    for (int i = 0; i < 6; i++) {
+        float y = std::fmod(time * 900 + i * 130, kGround);
+        Text("0xC0000005", x + w / 2 + 6, y, 12, Fade2(Hex(0xffd0d8), 0.8f * life), F_MONOBOLD);
+    }
+    Glow({x, kGround}, 80, Hex(0xff3d5a), 0.6f * life);
+}
+
+// The broken pointer it throws, flying flat along the ground.
+void DrawSpear(Vector2 at, float dir, float time) {
+    float tail = at.x - dir * 150;
+    for (int i = 0; i < 6; i++) DrawLineEx({tail - dir * i * 18.0f, at.y}, {tail - dir * (i * 18.0f + 10), at.y}, 3, Fade2(Hex(0xffb050), 0.5f - i * 0.08f));
+    DrawLineEx({tail, at.y}, {at.x, at.y}, 14, kInk);
+    DrawLineEx({tail, at.y}, {at.x, at.y}, 8, Hex(0xff9e4a));
+    DrawLineEx({tail, at.y - 2}, {at.x, at.y - 2}, 2.5f, Hex(0xffd29a));
+    Vector2 tip = {at.x + dir * 34, at.y};
+    Tri({tip.x + dir * 4, tip.y}, {at.x - dir * 4, at.y - 22}, {at.x - dir * 4, at.y + 22}, kInk);
+    Tri(tip, {at.x, at.y - 17}, {at.x, at.y + 17}, Hex(0xff9e4a));
+    Glow(tip, 30, Hex(0xffb050), 0.4f);
+    (void)time;
+}
+
+// The blue screen sweeping the arena: only a dash gets through it.
+void DrawBsodWave(float x, float time) {
+    const Color blue = Hex(0x1f50c8);
+    DrawRectangleGradientH((int)x - 60, 0, 60, (int)kGround, Fade2(blue, 0), Fade2(blue, 0.85f));
+    DrawRectangle((int)x, 0, 46, (int)kGround, Fade2(blue, 0.92f));
+    DrawRectangleGradientH((int)x + 46, 0, 80, (int)kGround, Fade2(blue, 0.85f), Fade2(blue, 0));
+    for (int y = 0; y < (int)kGround; y += 6) DrawRectangle((int)x - 40, y, 120, 2, Fade2(BLACK, 0.15f));
+    for (int i = 0; i < 4; i++) {   // the sad face and the code, scrolling down it
+        float y = std::fmod(time * 220 + i * 170, kGround - 30);
+        Text(i % 2 ? ":(" : "0x0D", x + 6, y, i % 2 ? 28 : 13, Fade2(WHITE, 0.85f), i % 2 ? F_HEAVY : F_MONOBOLD);
+    }
+}
+
+// --------------------------------------------------------------------- Ada ---
+// Princess Ada, who keeps the Kernel running: a teal gown, dark hair, and a
+// little golden crown with { } on it.
+void DrawAda(Vector2 feet, float s, float time) {
+    const float k = s * 0.52f;
+    BeginLocal(feet, k, k);
+    const float ow = 3.2f;
+    const Color gown = Hex(0x2bb5a8), gownD = Hex(0x1d8379), gownL = Hex(0x7fe0d4), hair = Hex(0x3a2a5a), hairL = Hex(0x5a4482), skin = Hex(0xf2cfb4), gold = Hex(0xe8b44a);
+    float sway = std::sin(time * 1.5f) * 4, breathe = std::sin(time * 2.0f) * 1.2f;
+    auto U = [&](float x, float y) { return Vector2{x, y + breathe}; };
+    // long hair, behind
+    PolyO({U(-30, -196), U(30, -196), U(36, -120), U(22, -96), U(-22, -96), U(-36, -120)}, hair, ow);
+    // the gown: a wide skirt, then the bodice
+    PolyO({U(-24, -128), U(24, -128), {58 + sway, -6}, {50 + sway, 0}, {-50 + sway, 0}, {-58 + sway, -6}}, gown, ow);
+    Poly({U(-20, -124), U(-4, -124), {-10 + sway, -6}, {-48 + sway, -6}}, gownL);
+    Poly({U(10, -124), U(22, -124), {54 + sway, -8}, {26 + sway, -8}}, gownD);
+    DrawLineEx({-50 + sway, -10}, {50 + sway, -10}, 5, K(gold));   // a golden hem
+    PolyO({U(-22, -168), U(22, -168), U(26, -126), U(-26, -126)}, gownL, ow);
+    DrawLineEx(U(-24, -132), U(24, -132), 4, K(gold));
+    // arms folded in front
+    OLine(U(-20, -160), U(-8, -138), 10, skin, ow);
+    OLine(U(20, -160), U(8, -138), 10, skin, ow);
+    // the head: face, hair framing it, the crown
+    OC(U(0, -192), 24, skin, ow);
+    PolyO({U(-26, -196), U(-20, -216), U(0, -222), U(20, -216), U(26, -196), U(14, -208), U(-14, -208)}, hair, ow * 0.8f);
+    DrawCircleV(U(-8, -210), 6, K(hairL));
+    for (int i = 0; i < 2; i++) DrawCircleV(U(i == 0 ? -8.0f : 8.0f, -190), 2.8f, K(Hex(0x2a1d45)));
+    DrawLineEx(U(-5, -180), U(5, -180), 2.5f, K(Hex(0xc0566a)));
+    DrawCircleV(U(-14, -184), 4, K(Fade2(Hex(0xff9aa8), 0.5f)));
+    DrawCircleV(U(14, -184), 4, K(Fade2(Hex(0xff9aa8), 0.5f)));
+    PolyO({U(-18, -220), U(-18, -234), U(-9, -226), U(0, -238), U(9, -226), U(18, -234), U(18, -220)}, gold, ow * 0.8f);
+    EndLocal();
+    LocalText("{ }", {0, -226 + breathe}, feet, k, k, 14, Hex(0x7a4a00), F_MONOBOLD);
+}
+
+void DrawSegfault(Vector2 c, float s, float time, float hurt, float alpha) {
     const float k = s * 0.74f;
     const Vector2 o = {c.x - 600 * k, c.y - 720 * k};   // where local (0, 0) lands
     BeginLocal(o, k, k);
+    gHurt = hurt;
+    gAlpha = alpha;
     const Color body = Hex(0x5a1d46), bodyD = Hex(0x3e1231), bodyL = Hex(0x8a2f6a), core = Hex(0xff3d5a), horn = Hex(0xff8a4c), hornL = Hex(0xffc07a);
     GlowK({600, 600}, 420, core, 0.25f);
     // legs: stacked memory blocks
@@ -874,7 +1360,8 @@ void DrawSegfault(Vector2 c, float s, float time) {
     GlowK({722, 470}, 20, core, 0.7f);
     EndLocal();
     // the words on it, drawn the right way round
-    auto T = [&](const char* str, float x, float y, float size, Color col, FontKind f) { LocalText(str, {x, y}, o, k, k, size, col, f); };
+    if (alpha < 0.05f) return;
+    auto T = [&](const char* str, float x, float y, float size, Color col, FontKind f) { LocalText(str, {x, y}, o, k, k, size, Fade2(col, (col.a / 255.0f) * alpha), f); };
     float jitter = std::fmod(time, 3.1f) < 0.12f ? 6.0f : 0.0f;
     T(":(", 560 + jitter, 346, 92, WHITE, F_HEAVY);
     T("SEGMENTATION", 556, 420, 20, Fade2(WHITE, 0.9f), F_MONOBOLD);
@@ -919,8 +1406,12 @@ void DrawTerminalPillar(Vector2 feet, float time, bool ready, bool near) {
 
 // ------------------------------------------------------------ Stack Plains ---
 namespace {
-Texture2D gPlains = {}, gCanyon = {}, gPeaks = {};
-bool gArtTried = false;
+// The lands' paintings (by Ombremonde, CC0: see the README), loaded the first
+// time each one is needed: 0 plains, 1 canyon, 2 peaks, 3 forest, 4 city, 5 the Heap.
+const char* kBackdropFile[6] = {"stack_plains.jpg", "array_canyon.jpg", "pointer_peaks.jpg", "memory_forest.jpg", "list_city.jpg", "the_heap.jpg"};
+Texture2D gBackdrop[6] = {};
+bool gBackdropTried[6] = {};
+std::string gResDir;
 
 Texture2D LoadBackdrop(const std::string& path) {
     Image img = LoadImage(path.c_str());
@@ -931,14 +1422,32 @@ Texture2D LoadBackdrop(const std::string& path) {
     SetTextureFilter(tex, TEXTURE_FILTER_TRILINEAR);
     return tex;
 }
+
+const Texture2D& Bd(int i) {
+    if (!gBackdropTried[i] && !gResDir.empty()) {
+        gBackdropTried[i] = true;
+        gBackdrop[i] = LoadBackdrop(gResDir + "/backgrounds/" + kBackdropFile[i]);
+    }
+    return gBackdrop[i];
+}
 }
 
-void LoadArt(const std::string& resourceDir) {
-    if (gArtTried) return;
-    gArtTried = true;
-    gPlains = LoadBackdrop(resourceDir + "/backgrounds/stack_plains.png");
-    gCanyon = LoadBackdrop(resourceDir + "/backgrounds/array_canyon.png");
-    gPeaks = LoadBackdrop(resourceDir + "/backgrounds/pointer_peaks.png");
+void LoadArt(const std::string& resourceDir) { gResDir = resourceDir; }
+
+// A land's painting filling r (cropped to fit), drifting and zooming slowly,
+// darkened a little so the characters drawn over it stand out.
+void DrawBackdropIn(Rectangle r, int which, float time) {
+    if (which < 0 || which > 5) return;
+    const Texture2D& tex = Bd(which);
+    if (tex.id == 0) return;
+    float zoom = 1.10f + 0.04f * std::sin(time * 0.11f);
+    float aspect = r.width / r.height;
+    float sw = tex.width / zoom, sh = sw / aspect;
+    if (sh > tex.height / zoom) { sh = tex.height / zoom; sw = sh * aspect; }
+    float sx = (tex.width - sw) * (0.5f + 0.4f * std::sin(time * 0.07f)), sy = (tex.height - sh) * 0.55f;
+    DrawTexturePro(tex, {sx, sy, sw, sh}, r, {0, 0}, 0, WHITE);
+    DrawRectangleRec(r, Fade2(Hex(0x0b0a14), 0.25f));
+    DrawRectangleGradientV((int)r.x, (int)(r.y + r.height * 0.45f), (int)r.width, (int)(r.height * 0.55f) + 1, Fade2(Hex(0x0b0a14), 0), Fade2(Hex(0x0b0a14), 0.6f));
 }
 
 // A painted backdrop, drifting slowly (parallax). It is drawn bigger than
@@ -961,8 +1470,8 @@ static void PaintedSky(const Texture2D& tex, float cam, Rectangle scr) {
 void DrawStackPlains(float cam, float time) {
     Rectangle scr = ScreenRect();
     const float L = scr.x, R = scr.x + scr.width;
-    const bool painted = gPlains.id != 0;
-    if (painted) PaintedSky(gPlains, cam, scr);
+    const bool painted = Bd(0).id != 0;
+    if (painted) PaintedSky(Bd(0), cam, scr);
     else {   // by hand: a dusk sky, a sun and layers of hills
         DrawRectangleGradientV((int)L, 0, (int)scr.width + 1, (int)kGround, Hex(0x1b1640), Hex(0x6a3f8a));
         Glow({L + scr.width * 0.72f - cam * 0.02f, 210}, 200, Hex(0xffb36b), 0.55f);
@@ -996,9 +1505,10 @@ void DrawStackPlains(float cam, float time) {
         }
     }
     // the ground: grass on top, rows of memory tiles below (in the picture's soft greens by day)
-    const Color soil = painted ? Hex(0x3b5a55) : Hex(0x1a1430), grass = painted ? Hex(0x7cbf8c) : Hex(0x3fbf6a);
-    const Color grassD = painted ? Hex(0x5a9a70) : Hex(0x2a8a4c), tile0 = painted ? Hex(0x4a6c66) : Hex(0x2a2148);
-    const Color tile1 = painted ? Hex(0x42605b) : Hex(0x221b3d), tuft = painted ? Hex(0x95d3a2) : Hex(0x5ad87f);
+    // (by day the earthy greens and browns of the painted meadow)
+    const Color soil = painted ? Hex(0x3e3222) : Hex(0x1a1430), grass = painted ? Hex(0x8fbf4e) : Hex(0x3fbf6a);
+    const Color grassD = painted ? Hex(0x6a9440) : Hex(0x2a8a4c), tile0 = painted ? Hex(0x55452e) : Hex(0x2a2148);
+    const Color tile1 = painted ? Hex(0x4a3c28) : Hex(0x221b3d), tuft = painted ? Hex(0xb2dc6e) : Hex(0x5ad87f);
     DrawRectangle((int)L, (int)kGround, (int)scr.width + 1, (int)(H - kGround) + 1, soil);
     DrawRectangle((int)L, (int)kGround, (int)scr.width + 1, 14, grass);
     DrawRectangle((int)L, (int)kGround + 14, (int)scr.width + 1, 6, grassD);
@@ -1016,8 +1526,8 @@ void DrawStackPlains(float cam, float time) {
 void DrawArrayCanyon(float cam, float time) {
     Rectangle scr = ScreenRect();
     const float L = scr.x, R = scr.x + scr.width;
-    const bool painted = gCanyon.id != 0;
-    if (painted) PaintedSky(gCanyon, cam, scr);
+    const bool painted = Bd(1).id != 0;
+    if (painted) PaintedSky(Bd(1), cam, scr);
     else {   // by hand: a warm sky and layers of mesas
         DrawRectangleGradientV((int)L, 0, (int)scr.width + 1, (int)kGround, Hex(0xfde9bf), Hex(0xe9b48e));
         struct Layer { float speed, base, amp, freq; unsigned col; };
@@ -1073,8 +1583,8 @@ void DrawArrayCanyon(float cam, float time) {
 void DrawPointerPeaks(float cam, float time) {
     Rectangle scr = ScreenRect();
     const float L = scr.x, R = scr.x + scr.width;
-    const bool painted = gPeaks.id != 0;
-    if (painted) PaintedSky(gPeaks, cam, scr);
+    const bool painted = Bd(2).id != 0;
+    if (painted) PaintedSky(Bd(2), cam, scr);
     else {   // by hand: a cold sky and sharp peaks
         DrawRectangleGradientV((int)L, 0, (int)scr.width + 1, (int)kGround, Hex(0xbcdcff), Hex(0xe6f2ff));
         struct Layer { float speed, base, amp, freq; unsigned col; };
@@ -1129,6 +1639,186 @@ void DrawPointerPeaks(float cam, float time) {
         if (seed % 3 == 0) DrawEllipse((int)x + 20, (int)kGround + 1, 16, 6, snow);   // little drifts
         if (seed % 5 == 2) {   // an icicle hanging from the edge
             Tri({x + 44, kGround + 14}, {x + 52, kGround + 14}, {x + 48, kGround + 34}, Hex(0xdcecff));
+        }
+    }
+}
+
+// ----------------------------------------------------------- Memory Forest ---
+void DrawMemoryForest(float cam, float time) {
+    Rectangle scr = ScreenRect();
+    const float L = scr.x, R = scr.x + scr.width;
+    const bool painted = Bd(3).id != 0;
+    if (painted) PaintedSky(Bd(3), cam, scr);
+    else {   // by hand: a dark green wood
+        DrawRectangleGradientV((int)L, 0, (int)scr.width + 1, (int)kGround, Hex(0x0c1a14), Hex(0x1f3a2a));
+        for (int i = 0; i < 14; i++) {
+            float x = std::fmod(i * 173.0f - cam * 0.3f + 10000, scr.width + 200) + L - 100;
+            DrawRectangle((int)x, 0, 26 + i % 3 * 10, (int)kGround, Hex(0x0f2218));
+        }
+    }
+    // leaked blocks drifting among the trees: dashed outlines, nobody owns them now
+    for (int i = 0; i < 6; i++) {
+        float wx = i * 760.0f + 380;
+        float x = wx - cam * 0.45f;
+        x = std::fmod(x - L + 4560 * 10, 4560.0f) + L - 400;
+        if (x < L - 300 || x > R + 300) continue;
+        float y = 160 + (i % 3) * 80 + std::sin(time * 0.6f + i * 2.3f) * 10;
+        Rectangle b = {x - 50, y, 100, 30};
+        const Color c = Fade2(Hex(0x9cf5c8), 0.55f);
+        DrawRectangleRounded(b, 0.25f, 6, Fade2(Hex(0x0e2a1c), 0.45f));
+        for (float dx = 0; dx < b.width; dx += 12) {   // a dashed outline
+            DrawRectangle((int)(b.x + dx), (int)b.y, 6, 2, c);
+            DrawRectangle((int)(b.x + dx), (int)(b.y + b.height - 2), 6, 2, c);
+        }
+        TextCenter(i % 2 ? "64 bytes" : "leaked", b, 13, Fade2(Hex(0xc8ffe8), 0.75f), F_MONOBOLD);
+    }
+    // fireflies: bits of memory glowing as they drift up
+    for (int i = 0; i < 40; i++) {
+        float layer = i % 2 ? 1.0f : 0.6f;
+        float fx = std::fmod(i * 131.0f - cam * 0.35f * layer + std::sin(time * 0.7f + i) * 24 + 100000, scr.width + 40) + L - 20;
+        float fy = kGround - 20 - std::fmod(i * 37.0f + time * 18 * layer, kGround - 60);
+        float tw = 0.5f + 0.5f * std::sin(time * 3 + i * 1.7f);
+        // a cheap glow (three soft rings): forty full glows cost more than the rest of the forest
+        DrawCircleSector({fx, fy}, 10 * layer, 0, 360, 10, Fade2(Hex(0x6ff5d0), 0.08f * tw));
+        DrawCircleSector({fx, fy}, 5.5f * layer, 0, 360, 8, Fade2(Hex(0x6ff5d0), 0.16f * tw));
+        DrawCircleV({fx, fy}, 1.6f * layer + 0.4f, Fade2(Hex(0xd8fff2), 0.6f + 0.4f * tw));
+    }
+    // the ground: dark moss, rooty soil, glowing mushrooms
+    const Color soil = Hex(0x14231c), moss = Hex(0x3f7a4a), mossD = Hex(0x2a5636), stone0 = Hex(0x23392e), stone1 = Hex(0x1d3127);
+    DrawRectangle((int)L, (int)kGround, (int)scr.width + 1, (int)(H - kGround) + 1, soil);
+    DrawRectangle((int)L, (int)kGround, (int)scr.width + 1, 14, moss);
+    DrawRectangle((int)L, (int)kGround + 14, (int)scr.width + 1, 6, mossD);
+    for (float x = L - std::fmod(cam, 64.0f) - 64; x < R; x += 64) {
+        float wx = x + cam;
+        int seed = (int)std::floor(wx / 64);
+        for (int row = 0; row < 3; row++) {
+            float y = kGround + 32 + row * 40.0f, xo = (row % 2) * 32.0f;
+            DrawRectangleRounded({x + xo + 4, y, 56, 30}, 0.2f, 4, row == 0 ? stone0 : stone1);
+        }
+        if (((seed % 4) + 4) % 4 == 1) {   // a root, curling into the soil
+            DrawSplineSegmentBezierCubic({x + 10, kGround + 12}, {x + 22, kGround + 40}, {x + 40, kGround + 30}, {x + 50, kGround + 64}, 5, Hex(0x2a1d14));
+        }
+        if (((seed % 5) + 5) % 5 == 2) {   // a glowing mushroom
+            float gx = x + 30;
+            Glow({gx, kGround - 10}, 26, Hex(0x6ff5d0), 0.35f + 0.15f * std::sin(time * 2 + seed));
+            DrawRectangle((int)gx - 2, (int)kGround - 12, 4, 12, Hex(0xd8e8d0));
+            DrawCircleSector({gx, kGround - 12}, 10, 180, 360, 12, Hex(0x6ff5d0));
+        }
+        if (((seed % 3) + 3) % 3 == 0) {   // tufts of grass
+            Tri({x + 8, kGround + 2}, {x + 12, kGround - 12}, {x + 16, kGround + 2}, Hex(0x5c9c5a));
+            Tri({x + 14, kGround + 2}, {x + 20, kGround - 8}, {x + 22, kGround + 2}, Hex(0x5c9c5a));
+        }
+    }
+}
+
+// --------------------------------------------------------- Linked List City ---
+void DrawListCity(float cam, float time) {
+    Rectangle scr = ScreenRect();
+    const float L = scr.x, R = scr.x + scr.width;
+    const bool painted = Bd(4).id != 0;
+    if (painted) PaintedSky(Bd(4), cam, scr);
+    else {   // by hand: an evening sky and rows of houses
+        DrawRectangleGradientV((int)L, 0, (int)scr.width + 1, (int)kGround, Hex(0x2a2f5a), Hex(0xd88a6a));
+        for (int i = 0; i < 20; i++) {
+            float x = std::fmod(i * 120.0f - cam * 0.3f + 10000, scr.width + 200) + L - 100, h = 140 + (i * 53) % 160;
+            DrawRectangle((int)x, (int)(kGround - h), 90, (int)h, Hex(0x2a2440));
+        }
+    }
+    // lists drifting over the roofs: three nodes and NULL
+    for (int i = 0; i < 5; i++) {
+        float wx = i * 900.0f + 300;
+        float x = wx - cam * 0.45f;
+        x = std::fmod(x - L + 4500 * 10, 4500.0f) + L - 400;
+        if (x < L - 400 || x > R + 300) continue;
+        float y = 150 + (i % 3) * 85 + std::sin(time * 0.7f + i * 1.3f) * 8;
+        const Color box = Fade2(Hex(0xf6fbff), 0.55f), line = Fade2(Hex(0x6a7aa8), 0.6f), ink = Fade2(Hex(0x4a5680), 0.85f);
+        for (int j = 0; j < 3; j++) {
+            Rectangle b = {x + j * 82.0f, y, 58, 28};
+            DrawRectangleRounded(b, 0.2f, 6, box);
+            DrawRectangleRoundedLinesEx(b, 0.2f, 6, 1.5f, line);
+            DrawLineEx({b.x + 38, b.y}, {b.x + 38, b.y + 28}, 1.5f, line);
+            TextCenter(std::to_string((i * 17 + j * 5) % 90 + 1), {b.x, b.y, 38, 28}, 13, ink, F_MONOBOLD);
+            DrawCircleV({b.x + 48, b.y + 14}, 3, ink);
+            float ex = j < 2 ? b.x + 82 : b.x + 92;
+            DrawLineEx({b.x + 48, b.y + 14}, {ex - 4, b.y + 14}, 1.5f, ink);
+            Tri({ex, b.y + 14}, {ex - 7, b.y + 10}, {ex - 7, b.y + 18}, ink);
+            if (j == 2) Text("NULL", ex + 4, b.y + 7, 12, ink, F_MONOBOLD);
+        }
+    }
+    // the street: cobbles, a kerb, lamp posts that glow
+    const Color stoneTop = Hex(0x8a8070), kerb = Hex(0x6a6258), soil = Hex(0x2e2a30), cob0 = Hex(0x4e4852), cob1 = Hex(0x433e48);
+    DrawRectangle((int)L, (int)kGround, (int)scr.width + 1, (int)(H - kGround) + 1, soil);
+    DrawRectangle((int)L, (int)kGround, (int)scr.width + 1, 12, stoneTop);
+    DrawRectangle((int)L, (int)kGround + 12, (int)scr.width + 1, 6, kerb);
+    for (float x = L - std::fmod(cam, 64.0f) - 64; x < R; x += 64) {
+        float wx = x + cam;
+        int seed = (int)std::floor(wx / 64);
+        for (int row = 0; row < 3; row++) {   // rounded cobbles, staggered
+            float y = kGround + 28 + row * 38.0f, xo = (row % 2) * 32.0f;
+            DrawRectangleRounded({x + xo + 3, y, 58, 32}, 0.55f, 6, ((seed + row) % 3) ? cob0 : cob1);
+            DrawRectangleRounded({x + xo + 10, y + 4, 40, 5}, 1, 4, Fade2(Hex(0x8a8098), 0.35f));
+        }
+        if (((seed % 7) + 7) % 7 == 3) {   // a lamp post
+            float lx = x + 32;
+            Glow({lx, kGround - 132}, 70, Hex(0xffc878), 0.45f + 0.05f * std::sin(time * 3 + seed));
+            DrawRectangle((int)lx - 3, (int)kGround - 126, 6, 126, Hex(0x1e1c26));
+            DrawRectangle((int)lx - 9, (int)kGround - 10, 18, 10, Hex(0x1e1c26));
+            DrawRectangleRounded({lx - 10, kGround - 146, 20, 22}, 0.3f, 6, Hex(0x1e1c26));
+            DrawRectangleRounded({lx - 7, kGround - 143, 14, 16}, 0.3f, 6, Hex(0xffe0a0));
+        }
+    }
+}
+
+// ----------------------------------------------------------------- The Heap ---
+void DrawTheHeap(float cam, float time) {
+    Rectangle scr = ScreenRect();
+    const float L = scr.x, R = scr.x + scr.width;
+    const bool painted = Bd(5).id != 0;
+    if (painted) PaintedSky(Bd(5), cam, scr);
+    else DrawRectangleGradientV((int)L, 0, (int)scr.width + 1, (int)kGround, Hex(0x1a0a2a), Hex(0x5a2a6a));
+    // freed blocks drifting up, their addresses fading
+    for (int i = 0; i < 7; i++) {
+        float wx = i * 700.0f + 200;
+        float x = wx - cam * 0.45f;
+        x = std::fmod(x - L + 4900 * 10, 4900.0f) + L - 400;
+        if (x < L - 300 || x > R + 300) continue;
+        float y = 120 + std::fmod(i * 97.0f + time * 12, 380.0f);
+        float a = 0.55f * (0.3f + 0.7f * std::sin((y - 120) / 380 * PI));
+        Rectangle b = {x - 56, y, 112, 30};
+        DrawRectangleRounded(b, 0.25f, 6, Fade2(Hex(0x2a0f3a), 0.5f * a));
+        DrawRectangleRoundedLinesEx(b, 0.25f, 6, 1.5f, Fade2(Hex(0xff9ad8), a));
+        TextCenter(TextFormat("0x7FF%03X", (i * 0x2a7 + 0x1f0) & 0xFFF), b, 13, Fade2(Hex(0xffd0f0), a), F_MONOBOLD);
+        DrawLineEx({b.x + 6, b.y + 15}, {b.x + b.width - 6, b.y + 15}, 1.5f, Fade2(Hex(0xff5c7a), a * 0.7f));   // freed: crossed out
+    }
+    // a glitch now and then: a thin line of colour across the sky
+    if (std::fmod(time, 2.3f) < 0.08f) {
+        float y = 80 + std::fmod(time * 977, 400.0f);
+        DrawRectangle((int)L, (int)y, (int)scr.width + 1, 3, Fade2(Hex(0xff3dd0), 0.5f));
+        DrawRectangle((int)L, (int)y + 5, (int)scr.width + 1, 2, Fade2(Hex(0x3de5ff), 0.4f));
+    }
+    // sparks of memory rising
+    for (int i = 0; i < 30; i++) {
+        float sx = std::fmod(i * 151.0f - cam * 0.35f + 100000, scr.width + 40) + L - 20;
+        float sy = kGround - std::fmod(i * 47.0f + time * 30, kGround);
+        DrawRectangleRec({sx, sy, 3, 3}, Fade2(i % 3 ? Hex(0xff9ad8) : Hex(0xffe08a), 0.6f));
+    }
+    // the floor: dark crystal blocks, each with its address
+    const Color soil = Hex(0x1c0f26), top = Hex(0x8a5ab0), edge = Hex(0x5a3a7a), b0 = Hex(0x2e1a40), b1 = Hex(0x271636);
+    DrawRectangle((int)L, (int)kGround, (int)scr.width + 1, (int)(H - kGround) + 1, soil);
+    DrawRectangle((int)L, (int)kGround, (int)scr.width + 1, 10, top);
+    DrawRectangle((int)L, (int)kGround + 10, (int)scr.width + 1, 6, edge);
+    for (float x = L - std::fmod(cam, 64.0f) - 64; x < R; x += 64) {
+        float wx = x + cam;
+        int seed = (int)std::floor(wx / 64);
+        for (int row = 0; row < 3; row++) {
+            float y = kGround + 28 + row * 38.0f, xo = (row % 2) * 32.0f;
+            DrawRectangleRounded({x + xo + 3, y, 58, 32}, 0.2f, 4, ((seed + row) % 2) ? b0 : b1);
+        }
+        Text(TextFormat("%02X", (seed * 37) & 0xFF), x + 22, kGround + 36, 11, Fade2(Hex(0xb08ad0), 0.35f), F_MONOBOLD);
+        if (((seed % 6) + 6) % 6 == 4) {   // a crystal growing out of the floor
+            Tri({x + 20, kGround + 2}, {x + 30, kGround - 30}, {x + 38, kGround + 2}, Hex(0xd08aff));
+            Tri({x + 30, kGround - 30}, {x + 38, kGround + 2}, {x + 33, kGround + 2}, Hex(0x8a4ab0));
+            Glow({x + 30, kGround - 12}, 26, Hex(0xd08aff), 0.35f);
         }
     }
 }
