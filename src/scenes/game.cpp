@@ -8,6 +8,15 @@
 // Chapter 1: Stack Plains (Off-by-One Goblins, the Infinite Loop Serpent).
 // Chapter 2: Array Canyon (Out-of-Bounds Imps, the Matrix Golem).
 // Chapter 3: Pointer Peaks (NULL Ghosts, the Wild Pointer Wyvern).
+// Chapter 4: Memory Forest (Leak Slimes, the Leak Lord).
+// Chapter 5: Linked List City (Lost Nodes walking in lines, the Tangled List).
+// Chapter 6: The Heap (Dangling Bats, the SEGFAULT), then the ending and the credits.
+// Once a land is reached, Chapters on the menu plays it again.
+//
+// Game feel: coyote time and a jump buffer, shorter hops when jump is let go
+// early, a dash with a moment of invulnerability, hit-stop, screen shake that
+// fades (it can be switched off), particles, squash and stretch, combos and a
+// camera that looks ahead.
 // Plus the title menu, settings, and the story between the lands.
 // ============================================================================
 #include "app/app.h"
@@ -17,6 +26,7 @@
 #include "content/content.h"
 #include "scenes/game_art.h"
 #include "scenes/workspace.h"
+#include "rlgl.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
@@ -33,9 +43,9 @@ float Clamp01(float v) { return std::clamp(v, 0.0f, 1.0f); }
 float Rand01() { return GetRandomValue(0, 10000) / 10000.0f; }
 
 // --------------------------------------------------------------- settings ---
-enum Action { ACT_LEFT, ACT_RIGHT, ACT_JUMP, ACT_ATTACK, ACT_USE, ACT_COUNT };
-const char* kActionName[ACT_COUNT] = {"Move left", "Move right", "Jump", "Attack", "Use terminal"};
-const int kDefaultKeys[ACT_COUNT] = {KEY_A, KEY_D, KEY_SPACE, KEY_J, KEY_E};
+enum Action { ACT_LEFT, ACT_RIGHT, ACT_JUMP, ACT_ATTACK, ACT_USE, ACT_DASH, ACT_COUNT };
+const char* kActionName[ACT_COUNT] = {"Move left", "Move right", "Jump", "Attack", "Use terminal", "Dash"};
+const int kDefaultKeys[ACT_COUNT] = {KEY_A, KEY_D, KEY_SPACE, KEY_J, KEY_E, KEY_LEFT_SHIFT};
 
 std::string KeyName(int k) {
     if (k >= KEY_A && k <= KEY_Z) return std::string(1, (char)k);
@@ -61,7 +71,8 @@ std::string KeyName(int k) {
 }
 
 struct Settings {
-    int keys[ACT_COUNT] = {KEY_A, KEY_D, KEY_SPACE, KEY_J, KEY_E};
+    int keys[ACT_COUNT] = {KEY_A, KEY_D, KEY_SPACE, KEY_J, KEY_E, KEY_LEFT_SHIFT};
+    bool shake = true;           // screen shake (off for anyone it bothers)
     int difficulty = 1;          // 0 easy (7 hearts), 1 normal (5), 2 hard (3)
     bool questionTimer = true;   // 25 s to answer
     float volume = 0.6f;         // sound effects
@@ -74,8 +85,10 @@ struct Hero {
     float x = 200, y = kGround, vy = 0;
     int face = 1;
     float walk = 0, attack = -1, attackCd = 0, hurt = 0;
+    float dash = 0, dashCd = 0, invuln = 0;      // dashing (time left), until the next dash, can't be hurt
+    float coyote = 0, jumpBuf = 0, squash = 0;   // jump forgiveness; squash < 0 flattened, > 0 stretched
     int hearts = 5;
-    bool grounded = true;
+    bool grounded = true, jumping = false;
 };
 
 struct Goblin {
@@ -86,7 +99,10 @@ struct Goblin {
     float hy = 0, vy = 0, hopCd = 0.5f;   // imps: height above the ground, fall speed, time to the next hop
                                            // ghosts: hy their height, vy how solid (1) or NULL (0), hopCd time to the next change
     int index = 4;                         // imps: the out-of-bounds index they carry; ghosts: 1 solid, 0 turning NULL
+                                           // slimes: vy their size, index the bytes leaked, hopCd time to the next leak
     bool alive = true;
+    bool minion = false;                   // spawned by a boss: one hit, no question
+    int group = -1, order = 0;             // nodes: which line they walk in, and their place in it
 };
 
 struct Ring { float x, vx; float life; };   // the Serpent's loop rings, the Golem's shockwaves
@@ -94,12 +110,24 @@ struct Ring { float x, vx; float life; };   // the Serpent's loop rings, the Gol
 // A block the Golem drops: first a mark where it will land, then it falls.
 struct Rock { float x, y, vy, warn, warn0; int value; std::string label; float landed; };
 
-// A bolt the Wyvern fires along its aim.
+// A bolt the Wyvern fires along its aim (and the Leak Lord's blobs, which fall).
 struct Bolt { Vector2 p, v; };
+
+// A puddle of leaked memory on the ground.
+struct Puddle { float x, life; };
+
+// A node the Tangled List lays on the street for its traverse.
+struct Tile { float x; int value; float struck; };
+
+// A column of crash the SEGFAULT brings down: a mark first, then the beam.
+struct Beam { float x, warn, warn0, life; };
+
+// A particle: dust, sparks, the bits an enemy bursts into.
+struct Particle { float x, y, vx, vy, life, max, size, grav; Color c; int kind; };   // kind: 0 puff, 1 square, 2 streak
 
 struct Popup { std::string text; float x, y, age; Color col; };
 
-enum State { MENU, NEW_GAME, SETTINGS, STORY, CHAPTER, PLAY, QUIZ, TERMINAL, PAUSE, DEAD, VICTORY, CONFIRM_RESTART };
+enum State { MENU, NEW_GAME, SETTINGS, STORY, CHAPTER, PLAY, QUIZ, TERMINAL, PAUSE, DEAD, VICTORY, CONFIRM_RESTART, CHAPTERS, CREDITS };
 
 const float kLevelLen = 5200;
 
@@ -120,7 +148,14 @@ const Land kLands[] = {
     {"Stack Plains", "Loops and numbers", "Infinite Loop Serpent", "the Serpent", "goblin", "goblins", "plains", "boss", S_NUMBERS, S_LOOPS, 0x3fd1c7},
     {"Array Canyon", "Arrays and 2D arrays", "Matrix Golem", "the Golem", "imp", "imps", "canyon", "golem", S_ARRAYS, S_GRID, 0xff9e4a},
     {"Pointer Peaks", "Pointers and pointer arithmetic", "Wild Pointer Wyvern", "the Wyvern", "ghost", "ghosts", "peaks", "wyvern", S_POINTERS, S_PTRARITH, 0x9fd8ff},
+    {"Memory Forest", "Memory management", "Leak Lord", "the Leak Lord", "slime", "slimes", "forest", "leak", S_MEMORY, S_MEMORY, 0x7be36b},
+    {"Linked List City", "Linked lists and strings", "Tangled List", "the Tangled List", "node", "nodes", "city", "tangle", S_LISTS, S_STRINGS, 0x5fd0e0},
+    // the last land is the final exam: its questions come from every section
+    {"The Heap", "Everything: the final exam", "SEGFAULT", "the SEGFAULT", "bat", "bats", "heap", "segfault", S_POINTERS, S_MEMORY, 0xff3d5a},
 };
+
+// What a beaten bug bursts into, per land.
+const unsigned kBugColor[] = {0x6fd15a, 0xff6b4a, 0xd8f0ff, 0x7be36b, 0x2f9db0, 0x7a58a8};
 const int kLandCount = (int)(sizeof(kLands) / sizeof(kLands[0]));
 
 // ---------------------------------------------------------------- story ----
@@ -147,7 +182,23 @@ const Panel kAfterChapter2[] = {
 const Panel kAfterChapter3[] = {
     {"The Wild Pointer Wyvern crashes into the snow. Its arrow of a tail finally points at nothing at all.", 8},
     {"A third ribbon lies frozen in the ice. Below the peaks the path falls into a forest where memory leaks away...", 1},
-    {"To be continued. Chapter 4 arrives in the next update.", 3},
+    {"Every block malloc'd and never freed ends up here. The slimes grow fat on it, and the fattest of all wears a crown: the Leak Lord.", 9},
+};
+const Panel kAfterChapter4[] = {
+    {"free(), at last. The Leak Lord melts into the moss, and the forest breathes again.", 10},
+    {"Under the slime lies the fourth ribbon, and beyond the trees, the lights of a city where everything is linked...", 1},
+    {"In Linked List City every house points to the next one. In the square, knotted into itself, waits the Tangled List.", 11},
+};
+const Panel kAfterChapter5[] = {
+    {"The Tangled List comes undone, node by node, until nothing is left but NULL.", 12},
+    {"The fifth ribbon hangs from its last pointer. Under the square, the ground opens into the Heap itself...", 1},
+    {"Down there waits the SEGFAULT, and Ada with it. One last land, one last guardian: everything you have learned.", 2},
+};
+const Panel kAfterChapter6[] = {
+    {"The SEGFAULT shudders. Its screen flickers one last time, 0xC0000005... and then, at last, it simply exits.", 15},
+    {"In the deepest block of the Heap, Ada is free. \"You read every line,\" she says. \"Even the ones that crashed.\"", 13},
+    {"Back in the Kingdom of Memory every byte finds its place again, and every program runs to its end.", 0},
+    {"Every pointer remembered. Every block freed. The Forgotten Pointer has been found.", 14},
 };
 
 // ================================================================= scene ===
@@ -164,7 +215,7 @@ public:
         t = 0;
         snd::SetMusicVolume(set.music);
         snd::PlayMusic("title");
-        for (const char* id : {"story", "plains", "boss", "canyon", "golem", "peaks", "wyvern", "gameover"}) snd::Preload(id);   // ready before they are needed
+        for (const char* id : {"story", "plains", "boss", "canyon", "golem", "peaks", "wyvern", "forest", "leak", "city", "tangle", "heap", "segfault", "gameover"}) snd::Preload(id);   // ready before they are needed
         // --shot hooks, to check each screen from the command line ("play2", "boss3": the same in chapter 2, 3)
         std::string p = param;
         land = 0;
@@ -172,8 +223,14 @@ public:
         if (p == "settings") state = SETTINGS;
         else if (p == "story" && land == 0) StartStory(kIntro, 4, CHAPTER), panelIdx = 2, panelT = 100;
         else if (p == "story" && land == 1) StartStory(kAfterChapter1, 3, CHAPTER, 1), panelIdx = 2, panelT = 100;
-        else if (p == "story") StartStory(kAfterChapter2, 3, CHAPTER, 2), panelIdx = 2, panelT = 100;
-        else if (p == "ending") StartStory(kAfterChapter3, 3, MENU), panelIdx = 0, panelT = 100;
+        else if (p == "story" && land == 2) StartStory(kAfterChapter2, 3, CHAPTER, 2), panelIdx = 2, panelT = 100;
+        else if (p == "story" && land == 3) StartStory(kAfterChapter3, 3, CHAPTER, 3), panelIdx = 2, panelT = 100;
+        else if (p == "story" && land == 4) StartStory(kAfterChapter4, 3, CHAPTER, 4), panelIdx = 2, panelT = 100;
+        else if (p == "story") StartStory(kAfterChapter5, 3, CHAPTER, 5), panelIdx = 2, panelT = 100;
+        else if (p == "ending") StartStory(kAfterChapter6, 4, CREDITS), panelIdx = 1, panelT = 100;
+        else if (p == "ending2") StartStory(kAfterChapter6, 4, CREDITS), panelIdx = 3, panelT = 100;
+        else if (p == "credits") { state = CREDITS; creditsT = 9; }
+        else if (p == "chapters") { chaptersDone = 4; state = CHAPTERS; }
         else if (p == "chapter") StartChapter(land), chapterT = 0.5f;
         else if (p == "play" || p == "quiz" || p == "boss" || p == "terminal") {
             ResetLevel();
@@ -182,7 +239,7 @@ public:
             if (p == "quiz") { hero.x = 900; AskQuestion(0, false); }
             if (p == "play" && land >= 1) { hero.x = 900; for (int i = 0; i < 40; i++) Update(1 / 60.0f); }   // the imps hopping, the ghosts
             if (p == "boss" || p == "terminal") {
-                goblins.clear(); hero.x = kLevelLen - 600; Update(0.016f); bossT = 2; ringCd = 0; golemCd = 0; wyCd = 0; Update(0.5f);
+                goblins.clear(); hero.x = kLevelLen - 600; Update(0.016f); bossT = 2; ringCd = 0; golemCd = 0; wyCd = 0; lordCd = 0; tlCd = 0; sfCd = 0; Update(0.5f);
                 for (int i = 0; i < 45; i++) Update(1 / 60.0f);   // the Golem's first attack under way
             }
             if (p == "terminal") state = TERMINAL;
@@ -198,12 +255,18 @@ public:
             case SETTINGS: SettingsScreen(); break;
             case STORY: Story(dt); break;
             case CHAPTER: Chapter(dt); break;
-            case PLAY: Update(dt); Draw(); break;
+            case PLAY:   // hit-stop: the world holds still for a moment on a big hit
+                if (hitStop > 0) hitStop -= dt;
+                else Update(dt);
+                Draw();
+                break;
             case QUIZ: Draw(); Quiz(dt); break;
             case TERMINAL: Terminal(); break;
             case PAUSE: Draw(); Pause(); break;
             case DEAD: Draw(); Dead(dt); break;
             case VICTORY: Victory(dt); break;
+            case CHAPTERS: Chapters(); break;
+            case CREDITS: Credits(dt); break;
         }
     }
 
@@ -229,6 +292,27 @@ private:
     std::vector<Ring> rings;
     std::vector<Rock> rocks;
     std::vector<Bolt> bolts;
+    std::vector<Bolt> blobs;          // the Leak Lord's
+    std::vector<Puddle> puddles;
+    std::vector<Particle> parts;
+    float hitStop = 0, hurtFlash = 0, look = 0;   // freeze frames, the red edge when hurt, the camera's look-ahead
+    int combo = 0;
+    float comboT = 0, comboPop = 0;
+    // the Leak Lord: what it is doing (0 waiting, 1 spitting, 2 calling slimes)
+    float lordCd = 2, lordT = 0, lordMouth = 0;
+    int lordAct = 0;
+    // the Tangled List: what it is doing (0 waiting, 1 traversing, 2 whipping), where p is
+    std::vector<Tile> tiles;
+    float tlCd = 2, tlT = 0, tlPose = 0;
+    int tlAct = 0, tlP = -1;
+    // the SEGFAULT: what it is doing (0 waiting, 1 crash columns, 2 the spear, 3 the blue screen)
+    std::vector<Beam> beams;
+    std::vector<float> walls;          // blue screens sweeping the arena
+    float sfCd = 2, sfT = 0;
+    int sfAct = 0;
+    bool dashHint = false;             // "dash through it" has been said
+    float creditsT = 0;
+    int chapSel = 0;
     std::vector<Popup> popups;
     float cam = 0, shake = 0;
     bool arena = false, bossAwake = false;
@@ -272,6 +356,7 @@ private:
             else if (k == "timer") in >> set.questionTimer;
             else if (k == "volume") in >> set.volume;
             else if (k == "music") in >> set.music;
+            else if (k == "shake") in >> set.shake;
             else if (k == "key") { int a, v; in >> a >> v; if (a >= 0 && a < ACT_COUNT && v > 0) set.keys[a] = v; }
         }
         set.difficulty = std::clamp(set.difficulty, 0, 2);
@@ -285,6 +370,7 @@ private:
         out << "timer " << (set.questionTimer ? 1 : 0) << "\n";
         out << "volume " << set.volume << "\n";
         out << "music " << set.music << "\n";
+        out << "shake " << (set.shake ? 1 : 0) << "\n";
         for (int a = 0; a < ACT_COUNT; a++) out << "key " << a << " " << set.keys[a] << "\n";
     }
 
@@ -293,12 +379,14 @@ private:
         if (IsKeyDown(set.keys[a])) return true;
         if (a == ACT_LEFT) return IsKeyDown(KEY_LEFT);
         if (a == ACT_RIGHT) return IsKeyDown(KEY_RIGHT);
+        if (a == ACT_JUMP) return IsKeyDown(KEY_UP) || IsKeyDown(KEY_W);
         return false;
     }
     bool Pressed(Action a) const {
         if (IsKeyPressed(set.keys[a])) return true;
         if (a == ACT_JUMP) return IsKeyPressed(KEY_UP) || IsKeyPressed(KEY_W);
         if (a == ACT_ATTACK) return IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
+        if (a == ACT_DASH) return IsMouseButtonPressed(MOUSE_BUTTON_RIGHT);
         return false;
     }
 
@@ -327,10 +415,15 @@ private:
     void TitleBackdrop() {
         float drift = (0.5f - 0.5f * std::cos(t * 0.05f)) * 2600;   // drifts back and forth
         int far = std::min(chaptersDone, kLandCount - 1);   // the land you would continue in
-        if (far == 2) fp::DrawPointerPeaks(drift, t);
+        fp::SetLandLight(far);
+        if (far == 5) fp::DrawTheHeap(drift, t);
+        else if (far == 4) fp::DrawListCity(drift, t);
+        else if (far == 3) fp::DrawMemoryForest(drift, t);
+        else if (far == 2) fp::DrawPointerPeaks(drift, t);
         else if (far == 1) fp::DrawArrayCanyon(drift, t);
         else fp::DrawStackPlains(drift, t);
         // the hero, standing at the edge of the plains
+        fp::DrawShadow({ScreenRect().x + 220, kGround}, 52, 0);
         fp::DrawHero({ScreenRect().x + 220, kGround}, 1.3f, 1, 0, -1, t, false);
     }
 
@@ -353,6 +446,7 @@ private:
         struct Entry { const char* label; bool enabled; int id; };
         std::vector<Entry> items;
         if (chaptersDone > 0) items.push_back({"Continue", true, 0});
+        if (chaptersDone > 0) items.push_back({"Chapters", true, 5});
         items.push_back({"New Game", true, 1});
         if (chaptersDone > 0) items.push_back({"Restart", true, 2});
         items.push_back({"Settings", true, 3});
@@ -381,6 +475,7 @@ private:
             case 2: state = CONFIRM_RESTART; break;
             case 3: settingsBack = MENU; state = SETTINGS; rebinding = -1; break;
             case 4: Leave(); break;
+            case 5: state = CHAPTERS; chapSel = std::min(chaptersDone, kLandCount - 1); break;
             default: break;
         }
     }
@@ -457,6 +552,7 @@ private:
             if (a == ACT_RIGHT) k += rebinding == a ? "" : "  /  Right";
             if (a == ACT_JUMP) k += rebinding == a ? "" : "  /  Up";
             if (a == ACT_ATTACK) k += rebinding == a ? "" : "  /  Mouse";
+            if (a == ACT_DASH) k += rebinding == a ? "" : "  /  Right mouse";
             TextRight(k, row.x + row.width - 18, row.y + 11, 16.5f, rebinding == a ? Hex(0xff9e4a) : Hex(0xb9b0ff), F_BOLD);
             if (hover) WantHand();
             if (hover && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && rebinding < 0) rebinding = a;
@@ -474,6 +570,8 @@ private:
         snd::SetMusicVolume(set.music);   // follows the bar while it is dragged
         y += step;
         if (Slider({x0, y, w, rh}, "Sound effects", set.volume)) { Save(); Fx(snd::FX_RIGHT); }
+        y += step;
+        if (Cycle({x0, y, w, rh}, "Screen shake", set.shake ? "On" : "Off")) { set.shake = !set.shake; Save(); Fx(snd::FX_MENU_MOVE); }
         y += 64;
         if (Item(W / 2, y, "Back", false) || (rebinding < 0 && IsKeyPressed(KEY_ESCAPE))) { Save(); state = settingsBack; }
     }
@@ -524,6 +622,15 @@ private:
         DrawRectangleRounded(art, 0.06f, 10, Hex(0x15122b));
         BeginClip(art);
         DrawRectangleGradientV((int)art.x, (int)art.y, (int)art.width, (int)art.height, Hex(0x1b1640), Hex(0x3a2a6b));
+        // behind the picture, the painting of where the story is: the land just
+        // beaten on the first panel, then the next one (the Heap for the SEGFAULT)
+        int where;
+        if (panels == kIntro) where = p.art == 2 ? 5 : 0;
+        else if (panels == kAfterChapter5) where = panelIdx == 0 ? 4 : 5;
+        else if (panels == kAfterChapter6) where = panelIdx < 2 ? 5 : 0;
+        else where = panelIdx == 0 ? storyLand - 1 : storyLand;
+        fp::DrawBackdropIn(art, where, t);
+        fp::SetLandLight(where);
         Vector2 mid = {art.x + art.width / 2, art.y + art.height};
         switch (p.art) {
             case 0: fp::DrawCastle({art.x + 120, art.y + 40, art.width - 240, art.height - 40}, t); break;
@@ -546,6 +653,34 @@ private:
                 fp::DrawGhost({mid.x - 110, mid.y - 50}, 1.2f, 1, 0, 1, 0.5f + 0.5f * std::sin(t * 1.3f), t + 1);
                 break;
             case 8: fp::DrawWyvern({mid.x, mid.y - 110}, 1.0f, -1, 70, 0.25f, 0, 0.75f, t); break;   // fallen in the snow
+            case 9:   // the forest: the Leak Lord and two of its slimes
+                fp::DrawLeakLord({mid.x + 150, mid.y - 20}, 0.62f, t, 0.2f + 0.2f * std::sin(t * 1.7f), 0, 1, 0);
+                fp::DrawSlime({mid.x - 250, mid.y - 30}, 1.3f, 1, 0, 1.0f, 0, 1, 32, t);
+                fp::DrawSlime({mid.x - 110, mid.y - 30}, 1.0f, 1, 0, 1.0f, 0, 1, 16, t + 1);
+                break;
+            case 10: fp::DrawLeakLord({mid.x, mid.y - 20}, 0.62f, t, 0, 0, 0.85f, 0.8f); break;   // melted
+            case 11: {   // the city: the Tangled List, and a line of nodes
+                fp::DrawTangledList({mid.x + 170, mid.y - 16}, 0.52f, t, 0.2f + 0.2f * std::sin(t * 1.3f), 0, 1, 0);
+                const float xs[3] = {mid.x - 150, mid.x - 250, mid.x - 350};
+                for (int i = 0; i < 3; i++) {
+                    Vector2 f = {xs[i], mid.y - 28};
+                    if (i < 2) fp::DrawLink(fp::NodeNextDot(f, 1.25f, -1), fp::NodeInlet({xs[i + 1], mid.y - 28}, 1.25f, -1), 1, t);
+                    fp::DrawNode(f, 1.25f, -1, t * 6 + i, 0, 1, (i * 37 + 12) % 90, i == 0, i == 2, t);
+                }
+                break;
+            }
+            case 12: fp::DrawTangledList({mid.x, mid.y - 16}, 0.52f, t, 0, 0, 0.85f, 0.85f); break;   // undone
+            case 13:   // Ada, free, a glow of the Kernel around her
+                fp::DrawShadow({mid.x, mid.y - 30}, 46, 0);
+                fp::DrawAda({mid.x, mid.y - 30}, 1.6f, t);
+                break;
+            case 14:   // the Debugger and Ada, together
+                fp::DrawShadow({mid.x - 90, mid.y - 30}, 46, 0);
+                fp::DrawShadow({mid.x + 90, mid.y - 30}, 40, 0);
+                fp::DrawHero({mid.x - 90, mid.y - 30}, 1.6f, 1, 0, -1, t, false);
+                fp::DrawAda({mid.x + 90, mid.y - 30}, 1.5f, t);
+                break;
+            case 15: fp::DrawSegfault({mid.x, mid.y - 130}, 0.6f, t, 0, 0.4f + 0.25f * std::sin(t * 7)); break;   // fading out
         }
         EndClip();
         DrawRectangleRoundedLinesEx(art, 0.06f, 10, 2, Hex(0x4b4475));
@@ -576,6 +711,7 @@ private:
         else {
             state = afterStory;
             if (state == MENU) { menuSel = 0; snd::PlayMusic("title"); }
+            if (state == CREDITS) { creditsT = 0; snd::PlayMusic("title"); }
         }
     }
 
@@ -614,6 +750,41 @@ private:
             g.hopCd = Rand01();
             goblins.push_back(g);
         }
+        if (land == 4) {   // nodes: three lines of three, each walking behind the one in front
+            goblins.clear();
+            const float starts[3] = {1150, 2350, 3550};
+            for (int grp = 0; grp < 3; grp++)
+                for (int i = 0; i < 3; i++) {
+                    Goblin g;
+                    g.x = g.home = starts[grp] + i * 82.0f;
+                    g.hp = g.maxHp = 2;
+                    g.group = grp;
+                    g.order = i;
+                    g.index = GetRandomValue(1, 99);
+                    goblins.push_back(g);
+                }
+        }
+        if (land == 5)   // bats: up high, diving at different times
+            for (Goblin& g : goblins) { g.hy = 150; g.index = 0; g.hopCd = 1.0f + Rand01() * 2; }
+        beams.clear();
+        walls.clear();
+        sfAct = 0;
+        sfCd = 2.4f;
+        tiles.clear();
+        tlAct = 0;
+        tlCd = 2.4f;
+        tlPose = 0;
+        tlP = -1;
+        if (land == 3)   // slimes: small to start with; they grow as they leak
+            for (Goblin& g : goblins) { g.vy = 1; g.index = 16; g.hopCd = 1.0f + Rand01() * 2; }
+        puddles.clear();
+        blobs.clear();
+        parts.clear();
+        combo = 0;
+        comboT = hitStop = hurtFlash = look = 0;
+        lordAct = 0;
+        lordCd = 2.4f;
+        lordMouth = 0;
         if (land == 2)   // ghosts: solid to start with, turning NULL at different times
             for (Goblin& g : goblins) { g.index = 1; g.vy = 1; g.hy = 40; g.hopCd = 1.5f + Rand01() * 2.5f; }
         rings.clear();
@@ -634,17 +805,20 @@ private:
         bestPassed = 0;
         termMsg.clear();
         cam = 0;
-        // questions about this land's topic, shuffled; each one once before any repeats
+        // questions about this land's topic (the Heap: about everything), shuffled; each one once before any repeats
         const Land& ld = kLands[land];
         questionPool.clear();
         for (const Question& qq : Questions())
-            if (qq.section == ld.a || qq.section == ld.b) questionPool.push_back(qq.id);
+            if (land == 5 || qq.section == ld.a || qq.section == ld.b) questionPool.push_back(qq.id);
         Shuffle(questionPool);
         poolNext = 0;
         // the boss's problem: a medium one on the topic (C, so any compiler can run it)
         std::vector<const Problem*> pick;
+        if (land == 5)   // the final boss: one of the hardest problems, from any section
+            for (const Problem& p : Problems())
+                if (p.difficulty == 2 && !p.cppOnly) pick.push_back(&p);
         for (const Problem& p : Problems())
-            if ((p.section == ld.a || p.section == ld.b) && p.difficulty == 1 && !p.cppOnly) pick.push_back(&p);
+            if (land != 5 && (p.section == ld.a || p.section == ld.b) && p.difficulty == 1 && !p.cppOnly) pick.push_back(&p);
         if (pick.empty())
             for (const Problem& p : Problems())
                 if ((p.section == ld.a || p.section == ld.b) && p.difficulty == 1) pick.push_back(&p);
@@ -658,14 +832,59 @@ private:
 
     void Pop(const std::string& s, float x, float y, Color c) { popups.push_back({s, x, y, 0, c}); }
 
+    // ---- lines of nodes: the one in front (-1: this one is the head) and the one behind (-1: the tail)
+    int Ahead(const Goblin& g) const {
+        int best = -1;
+        for (size_t j = 0; j < goblins.size(); j++) {
+            const Goblin& o = goblins[j];
+            if (&o == &g || !o.alive || o.dying >= 0 || o.group != g.group || o.order >= g.order) continue;
+            if (best < 0 || o.order > goblins[best].order) best = (int)j;
+        }
+        return best;
+    }
+    int Behind(const Goblin& g) const {
+        int best = -1;
+        for (size_t j = 0; j < goblins.size(); j++) {
+            const Goblin& o = goblins[j];
+            if (&o == &g || !o.alive || o.dying >= 0 || o.group != g.group || o.order <= g.order) continue;
+            if (best < 0 || o.order < goblins[best].order) best = (int)j;
+        }
+        return best;
+    }
+
+    // ---- particles and shake
+    void Burst(float x, float y, int n, Color c, float speed, int kind = 0, float grav = 900, float size = 4) {
+        for (int i = 0; i < n && parts.size() < 700; i++) {
+            float a = Rand01() * 2 * PI, sp = speed * (0.35f + 0.65f * Rand01());
+            float life = 0.35f + 0.45f * Rand01();
+            parts.push_back({x, y, std::cos(a) * sp, std::sin(a) * sp - speed * 0.3f, life, life, size * (0.6f + 0.8f * Rand01()), grav, c, kind});
+        }
+    }
+    // Dust kicked up at the feet (dir: which way it blows; 0 both ways).
+    void Dust(float x, int dir) {
+        const unsigned col[] = {0xe8f0d8, 0xf0dcc0, 0xf4f8ff, 0xb8d8b0};
+        for (int i = 0; i < 9 && parts.size() < 700; i++) {
+            float side = dir != 0 ? (float)dir : (i % 2 ? 1.0f : -1.0f);
+            float sp = 60 + 120 * Rand01();
+            parts.push_back({x + side * 10, kGround - 4, side * sp, -30 - 50 * Rand01(), 0.45f, 0.45f, 5 + 4 * Rand01(), -40,
+                             Fade(Hex(col[std::clamp(land, 0, 3)]), 0.8f), 0});
+        }
+    }
+    void Shake(float amount) { shake = std::max(shake, amount); }
+    void Hit(float stop, float shakeBy) { hitStop = std::max(hitStop, stop); Shake(shakeBy); }
+
     void HurtHero(int fromDir) {
-        if (hero.hurt > 0) return;
+        if (hero.hurt > 0 || hero.invuln > 0) return;
         hero.hearts--;
         hero.hurt = 1.0f;
         hero.vy = -420;
         hero.grounded = false;
         hero.x += fromDir * 60;
-        shake = 0.3f;
+        hero.jumping = false;
+        Hit(0.07f, 0.6f);
+        hurtFlash = 0.5f;
+        combo = 0;
+        Burst(hero.x, hero.y - 80, 14, Hex(0xff5c7a), 380, 1, 900, 4);
         Fx(snd::FX_HURT);
         Pop("-1", hero.x, hero.y - 205, Hex(0xff5c7a));
         if (hero.hearts <= 0) { state = DEAD; deadT = 0; snd::PlayMusic("gameover"); }
@@ -676,14 +895,51 @@ private:
         Rectangle scr = ScreenRect();
         const float L = scr.x, vw = scr.width;
         // ---- the hero
+        // run, jump (coyote time + a jump buffer; let go early for a shorter hop), dash
         float move = (Down(ACT_RIGHT) ? 1.0f : 0) - (Down(ACT_LEFT) ? 1.0f : 0);
-        if (move != 0) hero.face = move > 0 ? 1 : -1;
-        hero.x += move * 340 * dt;
+        if (move != 0 && hero.dash <= 0) hero.face = move > 0 ? 1 : -1;
+        hero.dashCd = std::max(0.0f, hero.dashCd - dt);
+        hero.invuln = std::max(0.0f, hero.invuln - dt);
+        if (Pressed(ACT_DASH) && hero.dashCd <= 0) {
+            hero.dash = 0.16f;
+            hero.dashCd = 0.6f;
+            hero.invuln = 0.24f;   // dashing through an attack is safe
+            hero.jumping = false;
+            Fx(snd::FX_DASH, 0.8f);
+            if (hero.grounded) Dust(hero.x, -hero.face);
+        }
+        if (hero.dash > 0) {
+            hero.dash -= dt;
+            hero.x += hero.face * 1150 * dt;
+            hero.vy = 0;
+            for (int i = 0; i < 2; i++)   // speed lines behind it
+                parts.push_back({hero.x - hero.face * (20 + 30 * Rand01()), hero.y - 30 - 110 * Rand01(), -hero.face * 300.0f, 0, 0.22f, 0.22f, 3, 0,
+                                 Fade(Hex(0x9fe9ff), 0.8f), 2});
+        } else hero.x += move * 340 * dt;
         hero.walk = move != 0 && hero.grounded ? hero.walk + dt * 11 : 0;
-        if (Pressed(ACT_JUMP) && hero.grounded) { hero.vy = -820; hero.grounded = false; Fx(snd::FX_JUMP, 0.7f); }
-        hero.vy += 2300 * dt;
+        hero.coyote = hero.grounded ? 0.10f : hero.coyote - dt;
+        hero.jumpBuf = Pressed(ACT_JUMP) ? 0.13f : hero.jumpBuf - dt;
+        if (hero.jumpBuf > 0 && hero.coyote > 0 && hero.dash <= 0) {
+            hero.vy = -820;
+            hero.grounded = false;
+            hero.jumping = true;
+            hero.coyote = hero.jumpBuf = 0;
+            hero.squash = 0.26f;
+            Fx(snd::FX_JUMP, 0.7f);
+            Dust(hero.x, 0);
+        }
+        if (hero.jumping && !Down(ACT_JUMP) && hero.vy < -330) hero.vy = -330;   // let go early: a shorter hop
+        if (hero.vy >= 0) hero.jumping = false;
+        if (hero.dash <= 0) hero.vy += 2300 * dt;
+        float falling = hero.vy;
         hero.y += hero.vy * dt;
-        if (hero.y >= kGround) { hero.y = kGround; hero.vy = 0; hero.grounded = true; }
+        if (hero.y >= kGround) {
+            if (!hero.grounded && falling > 300) { hero.squash = -std::min(0.3f, falling / 3200); Dust(hero.x, 0); }
+            hero.y = kGround;
+            hero.vy = 0;
+            hero.grounded = true;
+        }
+        hero.squash *= 1 - std::min(1.0f, dt * 12);
         hero.hurt = std::max(0.0f, hero.hurt - dt);
         hero.attackCd = std::max(0.0f, hero.attackCd - dt);
         if (hero.attack >= 0) { hero.attack += dt / 0.22f; if (hero.attack >= 1) hero.attack = -1; }
@@ -714,6 +970,90 @@ private:
             g.touchCd = std::max(0.0f, g.touchCd - dt);
             if (g.dying >= 0) { g.dying += dt; g.hy = std::max(0.0f, g.hy - 300 * dt); if (g.dying > 0.6f) g.alive = false; continue; }
             float dx = hero.x - g.x;
+            if (land == 5) {   // a dangling bat: it flies above you and now and then dives (hit it low, or jump)
+                g.walk += dt * (g.index ? 22.0f : 12.0f);
+                bool chase = std::fabs(dx) < 560;
+                if (g.index == 0) {
+                    float want = 150 + 22 * std::sin(t * 2 + g.home * 0.01f);
+                    g.hy += (want - g.hy) * std::min(1.0f, dt * 3);
+                    if (chase) { g.face = dx > 0 ? 1 : -1; if (std::fabs(dx) > 120) g.x += g.face * 110 * dt; }
+                    else {
+                        if (g.x > g.home + 140) g.face = -1;
+                        if (g.x < g.home - 140) g.face = 1;
+                        g.x += g.face * 60 * dt;
+                    }
+                    g.hopCd -= dt;
+                    if (chase && g.hopCd <= 0 && std::fabs(dx) < 380) { g.index = 1; g.vy = 0; Fx(snd::FX_BAT, 0.7f); }
+                } else {   // the dive: down to the ground and up again, flying on
+                    g.vy += dt;
+                    float u = std::min(1.0f, g.vy / 1.1f);
+                    g.hy = 150 - 132 * std::sin(u * PI);
+                    g.x += g.face * 260 * dt;
+                    if (u >= 1) { g.index = 0; g.hopCd = 1.8f + Rand01() * 1.4f; }
+                }
+                float by = kGround - g.hy - 40, hy2 = hero.y - 70;
+                if (std::fabs(dx) < 46 && std::fabs(by - hy2) < 75 && g.touchCd <= 0 && hero.hurt <= 0) {
+                    g.touchCd = 1.0f;
+                    HurtHero(dx > 0 ? 1 : -1);
+                    if (state != PLAY) return;
+                }
+                continue;
+            }
+            if (land == 4) {   // a lost node: the head of a line chases you, the rest follow the one in front
+                int lead = Ahead(g);
+                float speed = 0;
+                if (lead < 0) {
+                    if (std::fabs(dx) < 480) { g.face = dx > 0 ? 1 : -1; speed = std::fabs(dx) > 40 ? 120.0f : 0; }
+                    else {
+                        if (g.x > g.home + 120) g.face = -1;
+                        if (g.x < g.home - 120) g.face = 1;
+                        speed = 50;
+                    }
+                    g.x += g.face * speed * dt;
+                } else {
+                    const Goblin& o = goblins[lead];
+                    float d = (o.x - o.face * 82) - g.x;   // its place, just behind the one in front
+                    float sp = std::clamp(d * 4, -220.0f, 220.0f);
+                    g.x += sp * dt;
+                    g.face = o.face;
+                    speed = std::fabs(sp);
+                }
+                g.walk = speed > 5 ? g.walk + dt * 9 : 0;
+                if (std::fabs(dx) < 44 && std::fabs(hero.y - kGround) < 70 && g.touchCd <= 0 && hero.hurt <= 0) {
+                    g.touchCd = 1.0f;
+                    HurtHero(dx > 0 ? 1 : -1);
+                    if (state != PLAY) return;
+                }
+                continue;
+            }
+            if (land == 3) {   // a leak slime: it oozes at you, leaking puddles and growing as it goes
+                bool chase = std::fabs(dx) < 520;
+                g.walk += dt;
+                if (chase) g.face = dx > 0 ? 1 : -1;
+                else {
+                    if (g.x > g.home + 120) g.face = -1;
+                    if (g.x < g.home - 120) g.face = 1;
+                }
+                if (!chase || std::fabs(dx) > 34) g.x += g.face * (chase ? 90.0f : 45.0f) * (g.minion ? 1.7f : 1.0f) * dt;
+                if (!g.minion) {
+                    g.hopCd -= dt;
+                    if (g.hopCd <= 0) {
+                        g.hopCd = 2.4f + Rand01();
+                        if (chase && puddles.size() < 14) {   // a leak: a puddle behind it, and it grows
+                            puddles.push_back({g.x - g.face * 40 * g.vy, 1.0f});
+                            g.vy = std::min(1.45f, g.vy + 0.09f);
+                            g.index = std::min(1024, g.index * 2);
+                            Fx(snd::FX_DRIP, 0.5f);
+                        }
+                    }
+                }
+                if (std::fabs(dx) < 40 * g.vy && hero.y > kGround - 80 * g.vy && g.touchCd <= 0 && hero.hurt <= 0) {
+                    g.touchCd = 1.0f;
+                    HurtHero(dx > 0 ? 1 : -1);
+                    if (state != PLAY) return;
+                }
+                continue;
+            }
             if (land == 2) {   // a NULL ghost: it floats at you, and every few seconds turns NULL
                 g.hopCd -= dt;
                 if (g.hopCd <= 0) {
@@ -785,7 +1125,13 @@ private:
             arena = true;
             arenaCam = kLevelLen - vw - L;   // the last screen of the level
             termX = arenaCam + L + 150;
-            bossX = arenaCam + L + vw * (land == 0 ? 0.68f : land == 1 ? 0.72f : 0.80f);
+            bossX = arenaCam + L + vw * (land == 0 ? 0.68f : land == 1 ? 0.72f : land == 2 ? 0.80f : land == 3 ? 0.78f : land == 4 ? 0.76f : 0.80f);
+            sfCd = 2.0f;
+            sfAct = 0;
+            tlCd = 2.0f;
+            tlAct = 0;
+            lordCd = 2.0f;
+            lordAct = 0;
             bossY = 220;
             wyCd = 2.0f;
             wyAct = 0;
@@ -793,10 +1139,10 @@ private:
             ringCd = 2.5f;
             golemCd = 2.2f;
             termCd = 0;
-            Fx(land == 0 ? snd::FX_ROAR : land == 1 ? snd::FX_GOLEM_WAKE : snd::FX_SCREECH);
+            Fx(land == 0 ? snd::FX_ROAR : land == 1 ? snd::FX_GOLEM_WAKE : land == 2 ? snd::FX_SCREECH : land == 3 ? snd::FX_BURP : land == 4 ? snd::FX_CREAK : snd::FX_ROAR);
             snd::PlayMusic(kLands[land].bossMusic);
             shake = 0.6f;
-            Pop(std::string("The ") + kLands[land].boss + " awakens!", hero.x, hero.y - 220, land == 0 ? Hex(0x0f7f73) : land == 1 ? Hex(0xa0441c) : Hex(0x2a5aa0));
+            Pop(std::string("The ") + kLands[land].boss + " awakens!", hero.x, hero.y - 220, land == 0 ? Hex(0x0f7f73) : land == 1 ? Hex(0xa0441c) : land == 2 ? Hex(0x2a5aa0) : land == 3 ? Hex(0x2f8a4c) : land == 4 ? Hex(0x1d6c7c) : Hex(0x9a1030));
             bossAwake = true;
         }
         if (bossAwake && bossDying < 0) {
@@ -818,13 +1164,25 @@ private:
                 float ddx = hero.x - bc.x, ddy = (hero.y - 70) - bc.y;
                 if (ddx * ddx + ddy * ddy < 170.0f * 170.0f) HurtHero(ddx > 0 ? 1 : -1);
             } else if (land == 1) UpdateGolem(dt, L, vw);
-            else UpdateWyvern(dt, L, vw);
+            else if (land == 2) UpdateWyvern(dt, L, vw);
+            else if (land == 3) UpdateLeakLord(dt, L, vw);
+            else if (land == 4) UpdateTangle(dt, L, vw);
+            else UpdateSegfault(dt, L, vw);
             if (state != PLAY) return;
             termCd = std::max(0.0f, termCd - dt);
             bool near = std::fabs(hero.x - termX) < 90;
             if (near && termCd <= 0 && Pressed(ACT_USE) && bossProblem) { state = TERMINAL; wsRunning = false; termMsg.clear(); Fx(snd::FX_TERMINAL); return; }
         }
         if (bossDying >= 0) {
+            if (bossDying == 0) {   // the boss is beaten: its slimes, its blobs and its list go with it
+                for (Goblin& g : goblins) if (g.minion && g.alive && g.dying < 0) g.dying = 0;
+                blobs.clear();
+                tiles.clear();
+                beams.clear();
+                walls.clear();
+                Burst(bossX, kGround - 150, 60, Hex(kLands[land].bossColor), 700, 1, 900, 7);
+                Hit(0.18f, 1.0f);
+            }
             bossDying += dt;
             if (bossDying > 2.4f) { Win(); return; }
         }
@@ -849,6 +1207,44 @@ private:
             float bx = b.p.x - hero.x, by = b.p.y - (hero.y - 70);
             if (bx * bx + by * by < 46.0f * 46.0f) { b.p.y = 99999; HurtHero(b.v.x > 0 ? 1 : -1); if (state != PLAY) return; }
         }
+        // the Leak Lord's blobs: they arc down and leave a puddle where they land
+        for (Bolt& b : blobs) {
+            b.v.y += 1400 * dt;
+            b.p.x += b.v.x * dt;
+            b.p.y += b.v.y * dt;
+            float bx = b.p.x - hero.x, by = b.p.y - (hero.y - 70);
+            if (bx * bx + by * by < 40.0f * 40.0f) { b.p.y = 99999; HurtHero(b.v.x > 0 ? 1 : -1); if (state != PLAY) return; continue; }
+            if (b.p.y >= kGround - 8) {
+                if (puddles.size() < 16) puddles.push_back({b.p.x, 1.0f});
+                Burst(b.p.x, kGround - 6, 10, Hex(0x7be36b), 260, 0, 900, 5);
+                Fx(snd::FX_DRIP, 0.5f);
+                b.p.y = 99999;
+            }
+        }
+        blobs.erase(std::remove_if(blobs.begin(), blobs.end(), [](const Bolt& b) { return b.p.y > 9999; }), blobs.end());
+        // the SEGFAULT's crash columns: a mark, then the beam (standing in it hurts)
+        for (Beam& b : beams) {
+            if (b.warn > 0) {
+                b.warn -= dt;
+                if (b.warn <= 0) { b.life = 1; Fx(snd::FX_BEAM, 0.7f); Shake(0.22f); }
+                continue;
+            }
+            b.life -= dt * 2.8f;
+            if (b.life > 0.5f && std::fabs(hero.x - b.x) < 40) { HurtHero(hero.x > b.x ? 1 : -1); if (state != PLAY) return; }
+        }
+        beams.erase(std::remove_if(beams.begin(), beams.end(), [](const Beam& b) { return b.warn <= 0 && b.life <= 0; }), beams.end());
+        // blue screens sweep the arena: only a dash (or a moment of being hurt) gets through
+        for (float& w : walls) {
+            w -= 540 * dt;
+            if (std::fabs(w - hero.x) < 34) { HurtHero(-1); if (state != PLAY) return; }
+        }
+        walls.erase(std::remove_if(walls.begin(), walls.end(), [&](float w) { return w < arenaCam + L - 200; }), walls.end());
+        // puddles dry up after a while; stepping in one hurts
+        for (Puddle& p : puddles) {
+            p.life -= dt / 5;
+            if (p.life > 0.15f && std::fabs(p.x - hero.x) < 34 && hero.y >= kGround - 4) { HurtHero(hero.x > p.x ? 1 : -1); if (state != PLAY) return; }
+        }
+        puddles.erase(std::remove_if(puddles.begin(), puddles.end(), [](const Puddle& p) { return p.life <= 0; }), puddles.end());
         bolts.erase(std::remove_if(bolts.begin(), bolts.end(), [&](const Bolt& b) {
             return b.p.y > kGround + 10 || b.p.x < arenaCam + L - 120 || b.p.x > arenaCam + L + vw + 120 || b.p.y < -120; }), bolts.end());
         for (Ring& r : rings) {
@@ -859,16 +1255,191 @@ private:
         rings.erase(std::remove_if(rings.begin(), rings.end(), [&](const Ring& r) { return r.life <= 0 || r.x < arenaCam + L - 100; }), rings.end());
 
         // ---- camera
-        float target = hero.x - (L + vw * 0.4f);
+        look += (hero.face * 90 - look) * std::min(1.0f, dt * 2.0f);   // looks ahead, where the hero is going
+        float target = hero.x - (L + vw * 0.4f) + look;
         target = std::clamp(target, -L, kLevelLen - vw - L);
         if (arena) target = arenaCam;
         cam += (target - cam) * std::min(1.0f, dt * 6);
-        shake = std::max(0.0f, shake - dt);
+        shake = std::max(0.0f, shake - dt * 1.6f);
+        hurtFlash = std::max(0.0f, hurtFlash - dt * 1.5f);
+        comboPop = std::max(0.0f, comboPop - dt * 4);
+        if (comboT > 0) { comboT -= dt; if (comboT <= 0) combo = 0; }
+        for (Particle& p : parts) {
+            p.vy += p.grav * dt;
+            p.vx *= 1 - std::min(1.0f, dt * 2.5f);
+            p.x += p.vx * dt;
+            p.y += p.vy * dt;
+            p.life -= dt;
+        }
+        parts.erase(std::remove_if(parts.begin(), parts.end(), [](const Particle& p) { return p.life <= 0; }), parts.end());
         for (Popup& p : popups) p.age += dt;
         popups.erase(std::remove_if(popups.begin(), popups.end(), [](const Popup& p) { return p.age > 1.4f; }), popups.end());
     }
 
     Vector2 BossCenter() const { return {bossX, 330 + std::sin(bossT * 1.3f) * 30}; }
+
+    // The SEGFAULT: it stands at the far end of the Heap and brings down columns
+    // of crash where you stand (move), throws its broken pointer along the
+    // ground (jump, or dash through it), or sends a blue screen across the
+    // whole arena (only a dash gets through). Once half its tests pass, it rages:
+    // faster, and one more column.
+    void UpdateSegfault(float dt, float L, float vw) {
+        bossX = arenaCam + L + vw * 0.80f + std::sin(bossT * 0.5f) * vw * 0.02f;
+        const bool rage = bossHp < 0.5f;
+        const float pace = rage ? 0.7f : 1.0f;
+        if (sfAct == 0) {
+            sfCd -= dt;
+            if (sfCd <= 0) {
+                float r = Rand01();
+                sfAct = r < 0.4f ? 1 : r < 0.75f ? 2 : 3;
+                sfT = 0;
+                if (sfAct == 1) {   // columns: one where you stand, the rest apart from it
+                    float lo = arenaCam + L + 110, hi = bossX - 210;
+                    std::vector<float> xs = {std::clamp(hero.x, lo, hi)};
+                    for (int tries = 0; tries < 30 && (int)xs.size() < (rage ? 4 : 3); tries++) {
+                        float x = lo + Rand01() * (hi - lo);
+                        bool apart = true;
+                        for (float o : xs) apart &= std::fabs(o - x) > 130;
+                        if (apart) xs.push_back(x);
+                    }
+                    for (size_t i = 0; i < xs.size(); i++) {
+                        float warn = (0.9f + 0.15f * i) * (rage ? 0.85f : 1.0f);
+                        beams.push_back({xs[i], warn, warn, 0});
+                    }
+                }
+                if (sfAct == 3) {
+                    Fx(snd::FX_BSOD);
+                    if (!dashHint) { Pop("Dash through it! (" + KeyName(set.keys[ACT_DASH]) + ")", hero.x, kGround - 280, Hex(0x1f50c8)); dashHint = true; }
+                }
+            }
+        } else {
+            sfT += dt;
+            if (sfAct == 1 && sfT > 0.3f) { sfAct = 0; sfCd = (2.2f + Rand01()) * pace; }
+            else if (sfAct == 2 && sfT >= 0.55f) {   // the spear, flat along the ground
+                bolts.push_back({{bossX - 200, kGround - 62}, {-950, 0}});
+                Fx(snd::FX_THROW);
+                sfAct = 0;
+                sfCd = (2.0f + Rand01()) * pace;
+            } else if (sfAct == 3 && sfT >= 0.9f) {   // the blue screen
+                walls.push_back(bossX - 180);
+                Shake(0.3f);
+                sfAct = 0;
+                sfCd = (2.6f + Rand01()) * pace;
+            }
+        }
+        // walking into it hurts
+        float ddx = hero.x - bossX;
+        if (std::fabs(ddx) < 150 && hero.y > kGround - 420) HurtHero(ddx > 0 ? 1 : -1);
+    }
+
+    // The Tangled List: it stands at the far side of the square and either
+    // lays a list of nodes along the street and sends the pointer p hopping
+    // along it, p = p->next, crushing whatever stands on the node it lands on
+    // (watch which node is lit next: step off it, or jump), or cracks a chain of
+    // nodes along the cobbles at you (jump).
+    static constexpr float kTraverseWait = 0.8f, kTraverseHop = 0.5f;
+    void UpdateTangle(float dt, float L, float vw) {
+        bossX = arenaCam + L + vw * 0.76f + std::sin(bossT * 0.6f) * vw * 0.03f;
+        for (Tile& tl : tiles) tl.struck = std::max(0.0f, tl.struck - dt * 3);
+        if (tlAct == 0) {
+            tlPose = std::max(0.0f, tlPose - dt * 2);
+            tlCd -= dt;
+            if (tlCd <= 0) {
+                tlAct = Rand01() < 0.55f ? 1 : 2;
+                tlT = 0;
+                if (tlAct == 1) {   // five nodes along the street, the head on the left
+                    tiles.clear();
+                    float lo = arenaCam + L + 280, hi = bossX - 250;
+                    for (int i = 0; i < 5; i++) tiles.push_back({lo + i * (hi - lo) / 4, GetRandomValue(1, 99), 0});
+                    tlP = -1;
+                    Fx(snd::FX_LINK, 0.7f);
+                }
+            }
+        } else if (tlAct == 1) {
+            tlT += dt;
+            tlPose = std::min(1.0f, tlPose + dt * 3);
+            int idx = tlT < kTraverseWait ? -1 : (int)((tlT - kTraverseWait) / kTraverseHop);
+            if (idx != tlP) {
+                tlP = idx;
+                if (tlP < (int)tiles.size()) {
+                    Tile& tl = tiles[tlP];
+                    tl.struck = 1;
+                    Fx(snd::FX_TRAVERSE, 0.8f);
+                    Shake(0.15f);
+                    Burst(tl.x, kGround - 20, 10, Hex(0xffc14d), 300, 2, 0, 3);
+                    if (std::fabs(hero.x - tl.x) < 50 && hero.y > kGround - 40) HurtHero(hero.x > tl.x ? 1 : -1);
+                } else {   // past the tail: p is NULL, the list is gone
+                    tiles.clear();
+                    tlAct = 0;
+                    tlCd = 2.2f + Rand01() * 1.0f;
+                }
+            }
+        } else {
+            tlT += dt;
+            tlPose = std::min(1.0f, tlT / 0.4f);
+            if (tlT >= 0.45f) {
+                rings.push_back({bossX - 150, -430, 6});
+                Fx(snd::FX_WHIP);
+                Shake(0.2f);
+                tlAct = 0;
+                tlCd = 2.0f + Rand01() * 1.0f;
+            }
+        }
+        // walking into it hurts
+        float ddx = hero.x - bossX;
+        if (std::fabs(ddx) < 150 && hero.y > kGround - 320) HurtHero(ddx > 0 ? 1 : -1);
+    }
+
+    // The Leak Lord: it sits at the far side of the clearing and either spits
+    // blobs of leaked memory in arcs at you (each leaves a puddle: keep moving)
+    // or calls little slimes out of itself (one hit each: cut them down).
+    void UpdateLeakLord(float dt, float L, float vw) {
+        bossX = arenaCam + L + vw * 0.78f + std::sin(bossT * 0.5f) * vw * 0.03f;
+        int minions = 0;
+        for (const Goblin& g : goblins) minions += g.minion && g.alive && g.dying < 0;
+        if (lordAct == 0) {
+            lordMouth = std::max(0.0f, lordMouth - dt * 2.5f);
+            lordCd -= dt;
+            if (lordCd <= 0) { lordAct = (Rand01() < 0.6f || minions >= 3) ? 1 : 2; lordT = 0; }
+        } else {
+            lordT += dt;
+            if (lordAct == 1) {   // three blobs: at you, a little in front, a little behind
+                lordMouth = std::min(1.0f, lordT / 0.35f);
+                if (lordT >= 0.4f) {
+                    Vector2 m = {bossX - 60, kGround - 140};
+                    for (int i = 0; i < 3; i++) {
+                        float tx = hero.x + (i - 1) * 120 + (Rand01() - 0.5f) * 50, T = 0.85f + 0.12f * i;
+                        float vx = (tx - m.x) / T, vy = (kGround - m.y - 0.5f * 1400 * T * T) / T;
+                        blobs.push_back({m, {vx, vy}});
+                    }
+                    Fx(snd::FX_LOB);
+                    lordAct = 0;
+                    lordCd = 2.2f + Rand01() * 1.0f;
+                }
+            } else {   // two little slimes squeeze out of it
+                lordMouth = 0.5f;
+                if (lordT >= 0.5f) {
+                    for (int i = 0; i < 2; i++) {
+                        Goblin g;
+                        g.x = g.home = bossX - 170 - i * 70.0f;
+                        g.hp = g.maxHp = 1;
+                        g.minion = true;
+                        g.vy = 0.65f;
+                        g.index = 8;
+                        g.face = -1;
+                        goblins.push_back(g);
+                        Burst(g.x, kGround - 30, 12, Hex(0x7be36b), 300, 0, 900, 5);
+                    }
+                    Fx(snd::FX_SPAWN);
+                    lordAct = 0;
+                    lordCd = 2.6f + Rand01() * 1.0f;
+                }
+            }
+        }
+        // walking into it hurts
+        float ddx = hero.x - bossX;
+        if (std::fabs(ddx) < 165 && hero.y > kGround - 260) HurtHero(ddx > 0 ? 1 : -1);
+    }
 
     // Where the Wyvern's mouth is (bolts come out of it).
     Vector2 WyvernMouth() const { return {bossX + wyFace * 150.0f, bossY - 68}; }
@@ -974,6 +1545,19 @@ private:
         Goblin& g = goblins[i];
         g.hurt = 1;
         g.x += hero.face * 26;
+        Burst(g.x - hero.face * 20, kGround - 60 - g.hy, 10, Hex(0xfff2c0), 480, 2, 0, 3);   // sparks
+        Hit(0.05f, 0.2f);
+        combo++;
+        comboT = 2.2f;
+        comboPop = 1;
+        if (g.minion) {   // a boss's little slime: one hit
+            g.hp = 0;
+            g.dying = 0;
+            Burst(g.x, kGround - 30, 18, Hex(kBugColor[std::clamp(land, 0, 3)]), 360, 1, 900, 5);
+            Fx(snd::FX_SQUISH);
+            return;
+        }
+        if (land == 3) Fx(snd::FX_SQUISH, 0.7f);
         bool last = g.hp <= 1;
         if (last || Rand01() < 0.4f) { AskQuestion(i, last); return; }
         g.hp--;
@@ -1072,9 +1656,21 @@ private:
         if (quizRight) {
             g.hp = quizFinal ? 0 : std::max(0, g.hp - 2);   // a critical hit
             Pop(quizFinal ? "Finished!" : "CRITICAL!", g.x, kGround - 140, Hex(0xe07800));
-            if (g.hp <= 0) { g.dying = 0; Fx(snd::FX_KILL); }
-            else Fx(snd::FX_CRIT);
-            shake = 0.15f;
+            if (g.hp <= 0) {
+                bool wasHead = land == 4 && Ahead(g) < 0 && Behind(g) >= 0;
+                g.dying = 0;
+                Fx(snd::FX_KILL);
+                if (wasHead) {   // the list goes on without it
+                    Pop("head = head->next", g.x, kGround - 190, Hex(0x1d6c7c));
+                    Fx(snd::FX_LINK);
+                }
+                Burst(g.x, kGround - 60 - g.hy, 34, Hex(kBugColor[std::clamp(land, 0, 3)]), 560, 1, 900, 6);
+            } else Fx(snd::FX_CRIT);
+            Burst(g.x, kGround - 70 - g.hy, 16, Hex(0xffd27a), 620, 2, 0, 4);
+            Hit(quizFinal ? 0.14f : 0.1f, 0.45f);
+            combo++;
+            comboT = 2.2f;
+            comboPop = 1;
         } else {
             g.hp = std::min(g.maxHp, g.hp + 1);   // it shrugs the hit off and strikes back
             g.touchCd = 1.0f;
@@ -1136,16 +1732,105 @@ private:
         deadT = 0;
     }
 
+    // ------------------------------------------------------------ chapters --
+    // Every land reached so far, as a card with its painting: play any of them again.
+    void Chapters() {
+        TitleBackdrop();
+        Shade(0.72f);
+        TextCenter("Chapters", {0, 50, W, 50}, 38, WHITE, F_HEAVY);
+        TextCenter("Play any land you have reached again", {0, 98, W, 22}, 15, Hex(0xb9b3d9), F_MEDIUM);
+        const float cw = 360, ch = 200, gap = 24, x0 = W / 2 - (3 * cw + 2 * gap) / 2, y0 = 150;
+        int open = std::min(chaptersDone, kLandCount - 1);
+        if (IsKeyPressed(KEY_RIGHT) || IsKeyPressed(KEY_D)) { chapSel = std::min(kLandCount - 1, chapSel + 1); Fx(snd::FX_MENU_MOVE); }
+        if (IsKeyPressed(KEY_LEFT) || IsKeyPressed(KEY_A)) { chapSel = std::max(0, chapSel - 1); Fx(snd::FX_MENU_MOVE); }
+        if (IsKeyPressed(KEY_DOWN) || IsKeyPressed(KEY_S)) { chapSel = std::min(kLandCount - 1, chapSel + 3); Fx(snd::FX_MENU_MOVE); }
+        if (IsKeyPressed(KEY_UP) || IsKeyPressed(KEY_W)) { chapSel = std::max(0, chapSel - 3); Fx(snd::FX_MENU_MOVE); }
+        int chosen = -1;
+        for (int i = 0; i < kLandCount; i++) {
+            Rectangle r = {x0 + (i % 3) * (cw + gap), y0 + (i / 3) * (ch + gap), cw, ch};
+            bool unlocked = i <= open, hover = MouseIn(r);
+            if (hover) chapSel = i;
+            bool on = chapSel == i;
+            BeginClip(r);
+            DrawRectangleRec(r, Hex(0x15122b));
+            if (unlocked) fp::DrawBackdropIn(r, i, t + i * 7);
+            else DrawRectangleRec(r, Fade(Hex(0x0b0a14), 0.6f));
+            EndClip();
+            DrawRectangleRoundedLinesEx(r, 0.06f, 8, on ? 3.0f : 1.5f, on ? Hex(0xffc14d) : Hex(0x4b4475));
+            Text(TextFormat("CHAPTER %d", i + 1), r.x + 16, r.y + 14, 13, unlocked ? Hex(0xffd29a) : Hex(0x6b648f), F_BOLD);
+            Text(unlocked ? kLands[i].name : "Locked", r.x + 16, r.y + ch - 62, 24, unlocked ? WHITE : Hex(0x8f88b8), F_HEAVY);
+            Text(unlocked ? kLands[i].topic : "Beat the land before it", r.x + 16, r.y + ch - 30, 13.5f, unlocked ? Hex(0xd8d3f5) : Hex(0x6b648f), F_MEDIUM);
+            if (!unlocked) {   // a padlock
+                Vector2 c = {r.x + cw - 40, r.y + 40};
+                DrawRing({c.x, c.y - 8}, 8, 12, 180, 360, 16, Hex(0x8f88b8));
+                DrawRectangleRounded({c.x - 14, c.y - 8, 28, 22}, 0.3f, 6, Hex(0x8f88b8));
+            }
+            if (unlocked && hover) WantHand();
+            if (unlocked && hover && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) chosen = i;
+        }
+        if ((IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_KP_ENTER)) && chapSel <= open) chosen = chapSel;
+        if (chosen >= 0) { Fx(snd::FX_MENU_SELECT); StartChapter(chosen); return; }
+        if (Item(W / 2, 640, "Back", false) || IsKeyPressed(KEY_ESCAPE)) { state = MENU; menuSel = 0; }
+    }
+
+    // ------------------------------------------------------------- credits --
+    void Credits(float dt) {
+        creditsT += dt;
+        Rectangle scr = ScreenRect();
+        fp::DrawBackdropIn(scr, 0, t);
+        DrawRectangleRec(scr, Fade(Hex(0x0b0a14), 0.5f));
+        // the two of them, home at last
+        fp::SetLandLight(0);
+        fp::DrawShadow({scr.x + 150, H - 40}, 40, 0);
+        fp::DrawShadow({scr.x + 250, H - 40}, 34, 0);
+        fp::DrawHero({scr.x + 150, H - 40}, 1.1f, 1, 0, -1, t, false);
+        fp::DrawAda({scr.x + 250, H - 40}, 1.0f, t);
+        struct Line { const char* text; float size; unsigned col; FontKind font; };
+        const Line lines[] = {
+            {"THE FORGOTTEN POINTER", 44, 0xffffff, F_HEAVY}, {"A SegFault story", 18, 0xd3ccff, F_MEDIUM}, {"", 30, 0, F_UI},
+            {"THE LANDS", 14, 0xffd29a, F_BOLD}, {"Stack Plains  -  the Infinite Loop Serpent", 17, 0xe6e1ff, F_MEDIUM},
+            {"Array Canyon  -  the Matrix Golem", 17, 0xe6e1ff, F_MEDIUM}, {"Pointer Peaks  -  the Wild Pointer Wyvern", 17, 0xe6e1ff, F_MEDIUM},
+            {"Memory Forest  -  the Leak Lord", 17, 0xe6e1ff, F_MEDIUM}, {"Linked List City  -  the Tangled List", 17, 0xe6e1ff, F_MEDIUM},
+            {"The Heap  -  the SEGFAULT", 17, 0xe6e1ff, F_MEDIUM}, {"", 30, 0, F_UI},
+            {"MADE BY", 14, 0xffd29a, F_BOLD}, {"The SegFault team", 20, 0xffffff, F_BOLD}, {"", 30, 0, F_UI},
+            {"PAINTINGS", 14, 0xffd29a, F_BOLD}, {"Ombremonde  -  Landscape Illustrations (CC0)", 17, 0xe6e1ff, F_MEDIUM}, {"", 20, 0, F_UI},
+            {"MUSIC", 14, 0xffd29a, F_BOLD}, {"Aureolus_Omicron  -  15 Melodic RPG Chiptunes (CC0)", 17, 0xe6e1ff, F_MEDIUM}, {"", 20, 0, F_UI},
+            {"BUILT WITH", 14, 0xffd29a, F_BOLD}, {"raylib  -  Inter  -  JetBrains Mono", 17, 0xe6e1ff, F_MEDIUM}, {"", 40, 0, F_UI},
+            {"Thank you for playing.", 22, 0xffffff, F_BOLD}, {"Every pointer remembered. Every block freed.", 17, 0xd3ccff, F_MEDIUM},
+            {"", 60, 0, F_UI}, {"THE END", 52, 0xffc14d, F_HEAVY},
+        };
+        const int n = (int)(sizeof(lines) / sizeof(lines[0]));
+        float total = 0;
+        for (int i = 0; i < n; i++) total += lines[i].size + 22;
+        // it scrolls up until THE END is in the middle, then stays
+        float y = std::max(H / 2 - total + 52 + 22, H + 20 - creditsT * 42);
+        for (int i = 0; i < n; i++) {
+            if (lines[i].text[0] && y > -60 && y < H + 20)
+                TextCenter(lines[i].text, {0, y, W, lines[i].size + 6}, lines[i].size, Hex(lines[i].col), lines[i].font);
+            y += lines[i].size + 22;
+        }
+        TextRight("Enter / click to return to the menu", scr.x + scr.width - 24, 20, 13, Hex(0xb9b3d9), F_MEDIUM);
+        if (creditsT > 1.0f && (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_ESCAPE) || IsMouseButtonPressed(MOUSE_BUTTON_LEFT))) {
+            state = MENU;
+            menuSel = 0;
+            snd::PlayMusic("title");
+        }
+    }
+
     void Victory(float dt) {
         deadT += dt;
         Draw();
         Shade(Clamp01(deadT / 0.8f) * 0.8f);
-        TextCenter(TextFormat("CHAPTER %d CLEARED", land + 1), {0, 300, W, 60}, 52, Fade(Hex(0x48e5a0), Clamp01(deadT)), F_HEAVY);
+        TextCenter(land == kLandCount - 1 ? std::string("THE KERNEL IS SAVED") : std::string(TextFormat("CHAPTER %d CLEARED", land + 1)),
+                   {0, 300, W, 60}, 52, Fade(Hex(0x48e5a0), Clamp01(deadT)), F_HEAVY);
         TextCenter(std::string("The ") + kLands[land].boss + " is defeated.", {0, 370, W, 26}, 19, Fade(Hex(0xd8d3f5), Clamp01(deadT)), F_MEDIUM);
         if (deadT > 1.2f && (IsKeyPressed(KEY_ENTER) || IsMouseButtonPressed(MOUSE_BUTTON_LEFT) || deadT > 4)) {
             if (land == 0) StartStory(kAfterChapter1, 3, CHAPTER, 1);        // on to the Array Canyon
             else if (land == 1) StartStory(kAfterChapter2, 3, CHAPTER, 2);   // on to the Pointer Peaks
-            else StartStory(kAfterChapter3, 3, MENU);
+            else if (land == 2) StartStory(kAfterChapter3, 3, CHAPTER, 3);   // on to the Memory Forest
+            else if (land == 3) StartStory(kAfterChapter4, 3, CHAPTER, 4);   // on to Linked List City
+            else if (land == 4) StartStory(kAfterChapter5, 3, CHAPTER, 5);   // down into the Heap
+            else StartStory(kAfterChapter6, 4, CREDITS);                     // the ending
         }
     }
 
@@ -1185,11 +1870,17 @@ private:
     // ------------------------------------------------------------- drawing --
     void Draw() {
         Rectangle scr = ScreenRect();
-        float sx = shake > 0 ? std::sin(t * 90) * shake * 10 : 0;
+        // shake: strong at once, then quickly gone (it's the square of what is left)
+        float amount = std::min(1.0f, shake);
+        float sx = set.shake && shake > 0 ? (std::sin(t * 83) + std::sin(t * 51.7f)) * 0.5f * amount * amount * 26 : 0;
         float c = cam - sx;
+        fp::SetLandLight(land);
         if (land == 0) fp::DrawStackPlains(c, t);
         else if (land == 1) fp::DrawArrayCanyon(c, t);
-        else fp::DrawPointerPeaks(c, t);
+        else if (land == 2) fp::DrawPointerPeaks(c, t);
+        else if (land == 3) fp::DrawMemoryForest(c, t);
+        else if (land == 4) fp::DrawListCity(c, t);
+        else fp::DrawTheHeap(c, t);
         auto X = [&](float wx) { return wx - c; };
         // signposts along the way: addresses on the plains, indices in the canyon
         int post = 0;
@@ -1198,7 +1889,10 @@ private:
             if (x < scr.x - 100 || x > scr.x + scr.width + 100) continue;
             DrawRectangle((int)x - 4, (int)kGround - 90, 8, 90, Hex(0x7a4a2a));
             DrawRectangleRounded({x - 60, kGround - 120, 120, 40}, 0.2f, 6, Hex(0xe8d3a8));
-            const char* label = land == 0 ? TextFormat("0x%04X", (int)wx) : land == 1 ? TextFormat("arr[%d]", post) : TextFormat("p + %d", post);
+            const char* label = land == 0 ? TextFormat("0x%04X", (int)wx) : land == 1 ? TextFormat("arr[%d]", post)
+                              : land == 2 ? TextFormat("p + %d", post)
+                              : land == 3 ? TextFormat("heap #%d", post)
+                              : land == 4 ? TextFormat("n%d->next", post) : TextFormat("0x7FF%03X", post * 0x120);
             TextCenter(label, {x - 60, kGround - 112, 120, 24}, 16, Hex(0x5a3a1a), F_MONOBOLD);
         }
         // the arena: the terminal and the boss
@@ -1211,11 +1905,13 @@ private:
             Vector2 bc = BossCenter();
             float alpha = bossDying >= 0 ? 1 - Clamp01(bossDying / 2.2f) : 1;
             float radius = 130 + (bossDying >= 0 ? bossDying * 40 : 0);
+            fp::DrawShadow({X(bc.x), kGround}, 150 * alpha, 0.55f);
             fp::DrawSerpent({X(bc.x), bc.y}, radius, t, bossHurt, alpha);
         }
         if (bossAwake && land == 1) {   // it falls apart, then fades
             float crumble = bossDying >= 0 ? Clamp01(bossDying / 1.4f) : 0;
             float alpha = bossDying >= 0 ? 1 - Clamp01((bossDying - 1.4f) / 0.9f) : 1;
+            fp::DrawShadow({X(bossX), kGround}, 150 * alpha, 0);
             fp::DrawGolem({X(bossX), kGround}, 1.0f, t, golemPose, bossHurt, alpha, crumble);
         }
         if (bossAwake && land == 2) {   // when beaten it falls out of the sky, then fades
@@ -1226,13 +1922,52 @@ private:
                 alpha = 1 - Clamp01((bossDying - 1.4f) / 0.9f);
             }
             float wing = std::fmod(t * (wyAct == 2 ? 2.6f : 1.5f), 1.0f);
+            fp::DrawShadow({X(bossX), kGround}, 130 * alpha, Clamp01((kGround - y) / 600));
             fp::DrawWyvern({X(bossX), y}, 1.0f, wyFace, tilt, bossDying >= 0 ? 0.25f : wing, bossHurt, alpha, t);
         }
+        if (bossAwake && land == 3) {   // when beaten it melts into the moss
+            float melt = bossDying >= 0 ? Clamp01(bossDying / 1.6f) : 0;
+            float alpha = bossDying >= 0 ? 1 - Clamp01((bossDying - 1.5f) / 0.8f) : 1;
+            fp::DrawShadow({X(bossX), kGround}, 190 * alpha, 0);
+            fp::DrawLeakLord({X(bossX), kGround}, 1.0f, t, lordMouth, bossHurt, alpha, melt);
+        }
+        if (bossAwake && land == 4) {   // when beaten it comes undone and sinks
+            float fall = bossDying >= 0 ? Clamp01(bossDying / 1.6f) : 0;
+            float alpha = bossDying >= 0 ? 1 - Clamp01((bossDying - 1.5f) / 0.8f) : 1;
+            fp::DrawShadow({X(bossX), kGround}, 220 * alpha, 0);
+            fp::DrawTangledList({X(bossX), kGround}, 1.0f, t, tlPose, bossHurt, alpha, fall);
+        }
+        if (bossAwake && land == 5) {   // when beaten it glitches, shakes and fades out
+            float alpha = bossDying >= 0 ? 1 - Clamp01((bossDying - 1.2f) / 1.0f) : 1;
+            float jitter = bossDying >= 0 ? std::sin(t * 70) * 10 * Clamp01(bossDying) : 0;
+            fp::DrawShadow({X(bossX), kGround}, 200 * alpha, 0);
+            fp::DrawSegfault({X(bossX) + jitter, kGround - 116}, 0.75f, t, bossHurt, alpha);
+        }
+        for (const Beam& b : beams) {
+            if (b.warn > 0) fp::DrawBeamMark(X(b.x), 1 - b.warn / b.warn0, t);
+            else fp::DrawBeam(X(b.x), b.life, t);
+        }
+        // the traverse: the list on the street, the next node to be hit lit up, p over it
+        for (size_t i = 0; i < tiles.size(); i++) {
+            if (i + 1 < tiles.size()) fp::DrawLink({X(tiles[i].x) + 28, kGround - 15}, {X(tiles[i + 1].x) - 46, kGround - 15}, 1, t);
+            float warn = 0;
+            if ((int)i == tlP + 1) warn = tlP < 0 ? Clamp01(tlT / kTraverseWait) : Clamp01((tlT - kTraverseWait - tlP * kTraverseHop) / kTraverseHop);
+            fp::DrawListTile(X(tiles[i].x), tiles[i].value, warn, tiles[i].struck, t);
+        }
+        if (!tiles.empty()) {
+            int at = std::clamp(tlP, 0, (int)tiles.size() - 1);
+            Text("NULL", X(tiles.back().x) + 60, kGround - 26, 15, Hex(0xff8a9c), F_MONOBOLD);
+            fp::DrawCursorP({X(tiles[at].x), kGround - 40}, t);
+        }
+        for (const Puddle& p : puddles) fp::DrawPuddle(X(p.x), p.life, t);
+        for (const Bolt& b : blobs) fp::DrawBlob({X(b.p.x), b.p.y}, t);
         for (const Bolt& b : bolts) {
+            if (land == 5) { fp::DrawSpear({X(b.p.x), b.p.y}, b.v.x > 0 ? 1.0f : -1.0f, t); continue; }
             float l = std::sqrt(b.v.x * b.v.x + b.v.y * b.v.y) + 1e-4f;
             fp::DrawBolt({X(b.p.x), b.p.y}, {b.v.x / l, b.v.y / l}, t);
         }
         for (const Ring& r : rings) {
+            if (land == 4) { fp::DrawChainWhip({X(r.x), kGround}, t); continue; }
             if (land == 0) fp::DrawLoopRing({X(r.x), kGround - 26}, 26, t);
             else fp::DrawShockwave({X(r.x), kGround}, t);
         }
@@ -1244,18 +1979,49 @@ private:
         for (const Goblin& g : goblins) {
             if (!g.alive) continue;
             float a = g.dying >= 0 ? 1 - Clamp01(g.dying / 0.6f) : 1;
+            fp::DrawShadow({X(g.x), kGround}, (land == 3 ? 46 * g.vy : land == 4 ? 40 : land == 5 ? 30 : 34) * a, g.hy / 200);
             if (land == 0) fp::DrawGoblin({X(g.x), kGround + (g.dying >= 0 ? g.dying * 30 : 0)}, 1.0f, g.face, g.walk, g.hurt, a);
             else if (land == 1) fp::DrawImp({X(g.x), kGround - g.hy + (g.dying >= 0 ? g.dying * 30 : 0)}, 1.0f, g.face, g.hy / 100, g.hurt, a, g.index, t);
-            else fp::DrawGhost({X(g.x), kGround - g.hy + (g.dying >= 0 ? g.dying * 30 : 0)}, 1.0f, g.face, g.hurt, a, g.vy, t + g.home);
+            else if (land == 2) fp::DrawGhost({X(g.x), kGround - g.hy + (g.dying >= 0 ? g.dying * 30 : 0)}, 1.0f, g.face, g.hurt, a, g.vy, t + g.home);
+            else if (land == 5) fp::DrawBat({X(g.x), kGround - g.hy - 20 + (g.dying >= 0 ? g.dying * 60 : 0)}, 1.0f, g.face, g.walk, g.hurt, a, t);
+            else if (land == 4) {   // a node faces back along its line, so its next points at the one behind
+                Vector2 f = {X(g.x), kGround + (g.dying >= 0 ? g.dying * 30 : 0)};
+                int behind = g.dying < 0 ? Behind(g) : -1;
+                if (behind >= 0) fp::DrawLink(fp::NodeNextDot(f, 1.0f, -g.face), fp::NodeInlet({X(goblins[behind].x), kGround}, 1.0f, -goblins[behind].face), a, t);
+                fp::DrawNode(f, 1.0f, -g.face, g.walk, g.hurt, a, g.index, g.dying < 0 && Ahead(g) < 0, behind < 0, t);
+            }
+            else fp::DrawSlime({X(g.x), kGround + (g.dying >= 0 ? g.dying * 20 : 0)}, 1.0f, g.face, 0, g.vy, g.hurt, a, g.index, t + g.home);
             if (g.dying < 0 && g.hp < g.maxHp) {   // a small health bar once hit
-                Rectangle hb = {X(g.x) - 24, kGround - (land == 0 ? 140 : land == 1 ? 168 : 150) - g.hy, 48, 6};
+                float top = land == 0 ? 140 : land == 1 ? 168 : land == 2 ? 150 : land == 3 ? 50 * g.vy + 50 : land == 4 ? 104 : 74;
+                Rectangle hb = {X(g.x) - 24, kGround - top - g.hy, 48, 6};
                 DrawRectangleRounded(hb, 1, 6, Hex(0x2a2550));
                 DrawRectangleRounded({hb.x, hb.y, hb.width * g.hp / g.maxHp, hb.height}, 1, 6, Hex(0x6fd15a));
             }
         }
         // the hero (blinks while hurt)
         bool blink = hero.hurt > 0 && std::fmod(hero.hurt, 0.16f) < 0.08f;
-        fp::DrawHero({X(hero.x), hero.y}, 1.0f, hero.face, hero.walk, hero.attack, t, blink);
+        fp::DrawShadow({X(hero.x), kGround}, 40, (kGround - hero.y) / 220);
+        {   // squash and stretch, around its feet
+            float sq = 1 + hero.squash;
+            rlPushMatrix();
+            rlTranslatef(X(hero.x), hero.y, 0);
+            rlScalef(1 / sq, sq, 1);
+            rlTranslatef(-X(hero.x), -hero.y, 0);
+            fp::DrawHero({X(hero.x), hero.y}, 1.0f, hero.face, hero.walk, hero.attack, t, blink && hero.dash <= 0);
+            rlPopMatrix();
+        }
+        // particles over everything in the world
+        for (const Particle& p : parts) {
+            float k = p.life / p.max;
+            Color col = Fade(p.c, (p.c.a / 255.0f) * std::min(1.0f, k * 1.6f));
+            if (p.kind == 0) DrawCircleV({X(p.x), p.y}, p.size * (0.5f + 0.5f * (1 - k) + 0.3f), col);
+            else if (p.kind == 1) DrawRectanglePro({X(p.x), p.y, p.size, p.size}, {p.size / 2, p.size / 2}, p.life * 720, col);
+            else {
+                float l = std::sqrt(p.vx * p.vx + p.vy * p.vy) + 1e-3f;
+                float len = std::max(8.0f, l * 0.05f);
+                DrawLineEx({X(p.x), p.y}, {X(p.x) - p.vx / l * len, p.y - p.vy / l * len}, p.size * k + 1, col);
+            }
+        }
         // the Wyvern's aim goes over the hero, so its target can be seen
         if (bossAwake && land == 2 && bossDying < 0 && wyAct == 1)
             fp::DrawAimLine({X(WyvernMouth().x), WyvernMouth().y}, {X(aimTo.x), aimTo.y}, wyT < 0.9f ? 0.0f : 1.0f, t);
@@ -1264,6 +2030,22 @@ private:
             float a = 1 - p.age / 1.4f;
             TextCenter(p.text, {X(p.x) - 198, p.y - p.age * 50 + 2, 400, 30}, 22, Fade(Hex(0x0b0918), 0.6f * a), F_HEAVY);
             TextCenter(p.text, {X(p.x) - 200, p.y - p.age * 50, 400, 30}, 22, Fade(p.col, a), F_HEAVY);
+        }
+        // the blue screens, in front of everything
+        for (float w : walls) fp::DrawBsodWave(X(w), t);
+        if (bossAwake && land == 5 && sfAct == 3) {   // its warning: the right of the screen flickers blue
+            Rectangle s2 = ScreenRect();
+            float k = Clamp01(sfT / 0.9f) * (0.5f + 0.5f * std::sin(t * 30));
+            DrawRectangleGradientH((int)(s2.x + s2.width) - 220, 0, 221, (int)H, Fade(Hex(0x1f50c8), 0), Fade(Hex(0x1f50c8), 0.6f * k));
+        }
+        // a red edge when the hero is hurt
+        if (hurtFlash > 0) {
+            Rectangle scr2 = ScreenRect();
+            Color red = Fade(Hex(0xff2a4a), 0.55f * hurtFlash), none = Fade(Hex(0xff2a4a), 0);
+            DrawRectangleGradientV((int)scr2.x, 0, (int)scr2.width + 1, 120, red, none);
+            DrawRectangleGradientV((int)scr2.x, (int)H - 120, (int)scr2.width + 1, 120, none, red);
+            DrawRectangleGradientH((int)scr2.x, 0, 120, (int)H, red, none);
+            DrawRectangleGradientH((int)(scr2.x + scr2.width) - 120, 0, 121, (int)H, none, red);
         }
         Hud();
     }
@@ -1281,7 +2063,15 @@ private:
             DrawTriangle({c.x - 13.5f, c.y}, {c.x, c.y + 15}, {c.x + 13.5f, c.y}, col);
         }
         int left = 0;
-        for (const Goblin& g : goblins) left += g.alive && g.dying < 0;
+        for (const Goblin& g : goblins) left += g.alive && g.dying < 0 && !g.minion;
+        if (combo >= 2) {   // the combo, under the hearts
+            float k = 1 + 0.35f * comboPop;
+            std::string cs = "x" + std::to_string(combo) + " COMBO";
+            float fs2 = std::round(22 * k);
+            Text(cs, scr.x + 25, 62, fs2, Fade(Hex(0x0b0918), 0.6f), F_HEAVY);
+            Text(cs, scr.x + 24, 60, fs2, combo >= 5 ? Hex(0xffc14d) : Hex(0xffffff), F_HEAVY);
+            DrawRectangleRounded({scr.x + 24, 60 + fs2 + 6, 120 * Clamp01(comboT / 2.2f), 4}, 1, 6, Hex(0xffc14d));
+        }
         const Land& ld = kLands[land];
         std::string info = arena ? std::string("Defeat the ") + ld.boss
                                  : (left > 0 ? std::to_string(left) + " " + (left == 1 ? ld.enemy : ld.enemies) + " ahead" : "Go right, to the guardian");
